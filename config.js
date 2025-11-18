@@ -10,14 +10,7 @@ module.exports = {
     // Gemini API Configuration
     GEMINI_API_KEY: "AIzaSyBr8g6SYD9ebRLb3KrrTwCKH_mXxWp7EJI",
 
-     // Gemini Model Options (will try in order)
-    GEMINI_MODELS: [
-        "gemini-1.5-pro",
-        "gemini-1.0-pro", 
-        "gemini-pro",
-        "models/gemini-pro",
-        "gemini-1.5-flash"
-    ],
+   
     
     // Firebase Configuration
     FIREBASE_CONFIG: {
