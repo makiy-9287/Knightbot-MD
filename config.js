@@ -1,30 +1,58 @@
+// config.js
 require('dotenv').config();
 
-global.APIs = {
-    xteam: 'https://api.xteam.xyz',
-    dzx: 'https://api.dhamzxploit.my.id',
-    lol: 'https://api.lolhuman.xyz',
-    violetics: 'https://violetics.pw',
-    neoxr: 'https://api.neoxr.my.id',
-    zenzapis: 'https://zenzapis.xyz',
-    akuari: 'https://api.akuari.my.id',
-    akuari2: 'https://apimu.my.id',
-    nrtm: 'https://fg-nrtm.ddns.net',
-    bg: 'http://bochil.ddns.net',
-    fgmods: 'https://api-fgmods.ddns.net'
-};
-
-global.APIKeys = {
-    'https://api.xteam.xyz': 'd90a9e986e18778b',
-    'https://api.lolhuman.xyz': '85faf717d0545d14074659ad',
-    'https://api.neoxr.my.id': 'yourkey',
-    'https://violetics.pw': 'beta',
-    'https://zenzapis.xyz': 'yourkey',
-    'https://api-fgmods.ddns.net': 'fg-dylux'
-};
-
 module.exports = {
-    WARN_COUNT: 3,
-    APIs: global.APIs,
-    APIKeys: global.APIKeys
+    // Bot Identity
+    BOT_NAME: "Malith's AI Assistant",
+    BOT_OWNER: "Malith Lakshan",
+    OWNER_NUMBER: "94741907061",
+    
+    // Gemini API Configuration
+    GEMINI_API_KEY: "AIzaSyBr8g6SYD9ebRLb3KrrTwCKH_mXxWp7EJI",
+    
+    // Firebase Configuration
+    FIREBASE_CONFIG: {
+        apiKey: "AIzaSyBaGMyCNQRR-C6g4AS7gBSUO5ec88il2yU",
+        authDomain: "laky-bot-project.firebaseapp.com",
+        projectId: "laky-bot-project",
+        storageBucket: "laky-bot-project.firebasestorage.app",
+        messagingSenderId: "174580665716",
+        appId: "1:174580665716:web:6371e6f37af1be2833f021"
+    },
+    
+    // AI Behavior Settings
+    AI_SETTINGS: {
+        // Language support: Sinhala, English, Singlish (mixed)
+        SUPPORTED_LANGUAGES: ['si', 'en', 'mixed'],
+        DEFAULT_LANGUAGE: 'mixed',
+        
+        // Response settings
+        USE_EMOJIS: true,
+        DETECT_EMOTIONS: true,
+        
+        // Chat memory
+        MAX_HISTORY_LENGTH: 10, // Keep last 10 messages for context
+        SESSION_TIMEOUT: 30 * 60 * 1000, // 30 minutes session timeout
+    },
+    
+    // Bot Responses for specific queries
+    STATIC_RESPONSES: {
+        creator: {
+            en: "🤖 I was created by *Malith Lakshan* 📱 Contact: +94741907061",
+            si: "🤖 මාව සාදා ඇත්තේ *මලිත් ලක්ෂන්* විසිනි 📱 දුරකථන: +94741907061",
+            mixed: "🤖 මාව create කරන්නේ *Malith Lakshan* තමයි 📱 Contact: +94741907061"
+        },
+        how_made: {
+            en: "😊 I'm here to help you with conversations and information!",
+            si: "😊 මම ඔබට සංවාද සහ තොරතුරු සපයා ගැනීමට ඇති!",
+            mixed: "😊 I'm here to help you with conversations and information machan!"
+        }
+    },
+    
+    // Baileys WhatsApp Settings
+    WHATSAPP_SETTINGS: {
+        BROWSER: ["Ubuntu", "Chrome", "20.0.04"],
+        PRINT_QR: true,
+        AUTH_TYPE: "multi-file"
+    }
 };
