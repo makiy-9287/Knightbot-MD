@@ -5,51 +5,17 @@ const config = require('./config');
 class GeminiAI {
     constructor() {
         this.genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
-        
-        // Try different model names - Gemini frequently updates these
-        this.availableModels = [
-            "gemini-1.5-pro",
-            "gemini-1.0-pro", 
-            "gemini-pro",
-            "models/gemini-pro",
-            "gemini-1.5-flash"
-        ];
-        
-        this.model = null;
-        this.modelName = "";
-        this.initializeModel();
+        this.model = this.genAI.getGenerativeModel({ 
+            model: "gemini 2.5 Flash",
+            generationConfig: {
+                temperature: 0.7,
+                topK: 40,
+                topP: 0.95,
+                maxOutputTokens: 1024,
+            }
+        });
         
         this.chatSessions = new Map();
-    }
-
-    // Initialize model with fallback options
-    async initializeModel() {
-        for (const modelName of this.availableModels) {
-            try {
-                this.model = this.genAI.getGenerativeModel({ 
-                    model: modelName,
-                    generationConfig: {
-                        temperature: 0.7,
-                        topK: 40,
-                        topP: 0.95,
-                        maxOutputTokens: 1024,
-                    }
-                });
-                
-                // Test the model with a simple request
-                await this.model.generateContent("Hello");
-                this.modelName = modelName;
-                console.log(`✅ Gemini AI Model initialized: ${modelName}`);
-                break;
-            } catch (error) {
-                console.log(`❌ Model ${modelName} failed: ${error.message}`);
-                continue;
-            }
-        }
-        
-        if (!this.model) {
-            console.error('❌ All Gemini models failed. Using fallback mode.');
-        }
     }
 
     // Detect language from message
@@ -161,11 +127,6 @@ class GeminiAI {
     // Main method to generate AI response
     async generateResponse(userMessage, userId) {
         try {
-            // If model initialization failed, use fallback responses
-            if (!this.model) {
-                return this.getFallbackResponse(userMessage);
-            }
-
             // Detect language and emotion
             const language = this.detectLanguage(userMessage);
             const emotion = this.detectEmotion(userMessage);
@@ -216,62 +177,24 @@ class GeminiAI {
             };
 
         } catch (error) {
-            console.error('❌ Gemini AI Error:', error.message);
-            return this.getFallbackResponse(userMessage, error);
-        }
-    }
-
-    // Get fallback response when AI fails
-    getFallbackResponse(userMessage, error = null) {
-        const language = this.detectLanguage(userMessage);
-        const emotion = this.detectEmotion(userMessage);
-        
-        // Enhanced fallback responses with basic intelligence
-        const lowerMessage = userMessage.toLowerCase();
-        
-        // Greeting detection
-        if (lowerMessage.includes('hello') || lowerMessage.includes('hi') || lowerMessage.includes('hey') || 
-            lowerMessage.includes('ආයුබෝවන්') || lowerMessage.includes('හායි')) {
-            const greetings = {
-                en: "👋 Hello! I'm having some technical issues but I'm still here to chat!",
-                si: "👋 ආයුබෝවන්! මට තාක්ෂණික ගැටලුවක් තිබෙනවා, නමුත් මම තවමත් සංවාදයට සූදානම්!",
-                mixed: "👋 Hello machan! Mata technical issue ekak thibba, but mama ain chat karanna ready!"
+            console.error('❌ Gemini AI Error:', error);
+            
+            // Fallback responses based on detected language
+            const fallbackResponses = {
+                en: "😅 Sorry, I'm having trouble processing your message right now. Please try again!",
+                si: "😅 සමාවන්න, මට දැන් ඔබේ පණිවිඩය process කිරීමට අපහසු වෙමින් පවතී. නැවත උත්සාහ කරන්න!",
+                mixed: "😅 Sorry machan, mata dan message eka process karanna gahanna. Awasara ain karamu!"
             };
+            
+            const language = this.detectLanguage(userMessage);
             return {
-                text: greetings[language] || greetings.en,
+                text: fallbackResponses[language] || fallbackResponses.en,
                 language: language,
-                emotion: 'happy',
+                emotion: 'sad',
                 isStatic: false,
-                isFallback: true
+                isError: true
             };
         }
-        
-        // Creator question fallback
-        if (lowerMessage.includes('who made') || lowerMessage.includes('creator') || 
-            lowerMessage.includes('කවුද හැදුවේ') || lowerMessage.includes('create කරන්නේ')) {
-            return {
-                text: config.STATIC_RESPONSES.creator[language],
-                language: language,
-                emotion: emotion,
-                isStatic: true,
-                isFallback: true
-            };
-        }
-
-        // Default fallback responses
-        const fallbackResponses = {
-            en: "🤖 I'm Malith's AI assistant! Currently experiencing technical difficulties. Please try again in a moment!",
-            si: "🤖 මම මලිත්ගේ AI සහායකයා! දැන් තාක්ෂණික ගැටලුවක් තිබේ. කරුණාකර මොහොතකින් නැවත උත්සාහ කරන්න!",
-            mixed: "🤖 Mama Malith ge AI assistant! Dan technical issue ekak thiyenawa. Please awasarain thawa karamu!"
-        };
-        
-        return {
-            text: fallbackResponses[language] || fallbackResponses.en,
-            language: language,
-            emotion: 'sad',
-            isStatic: false,
-            isFallback: true
-        };
     }
 
     // Clear chat history for a user
