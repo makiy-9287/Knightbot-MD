@@ -7,12 +7,7 @@ class GeminiAI {
         this.genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
         this.model = this.genAI.getGenerativeModel({ 
             model: "gemini-2.5-flash-live",
-            generationConfig: {
-                temperature: 0.7,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 1024,
-            }
+            
         });
         
         this.chatSessions = new Map();
