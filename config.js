@@ -8,7 +8,7 @@ module.exports = {
     OWNER_NUMBER: "94741907061",
     
     // Gemini API Configuration
-    GEMINI_API_KEY: "AIzaSyBr8g6SYD9ebRLb3KrrTwCKH_mXxWp7EJI",
+    GEMINI_API_KEY: "AIzaSyDP6_YvofiYBISd1seV7ph_okmHs2ZWSxw",
 
    
     
