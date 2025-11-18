@@ -1,5 +1,5 @@
 // ai-handler.js
-const geminiAI = require('./gemini');
+const openAI = require('./openai-handler');
 const firebaseDB = require('./firebase');
 const config = require('./config');
 
@@ -53,6 +53,39 @@ class AIHandler {
         };
     }
 
+    // Handle static responses
+    handleStaticResponse(message, language) {
+        const lowerMessage = message.toLowerCase();
+        
+        const creatorKeywords = {
+            en: ['who made you', 'who created you', 'who built you', 'your creator', 'who develop you', 'who is your owner'],
+            si: ['මාව සාදා ඇත්තේ', 'මගේ නිර්මාතෘ', 'කවුද මාව හැදුවේ', 'මාව build කලේ', 'create කලේ', 'මගේ හිමිකරු'],
+            mixed: ['මාව create කරන්නේ', 'මගේ owner', 'කව්ද මාව හැදුවේ', 'build කලේ', 'හිමිකරු']
+        };
+
+        const howMadeKeywords = {
+            en: ['how were you made', 'how did you make', 'how were you created', 'how were you built', 'how you work'],
+            si: ['කොහොමද මාව හැදුවේ', 'මාව සෑදූ ආකාරය', 'කෙසේ වනවාද', 'හැදුවේ කොහොමද'],
+            mixed: ['කොහොමද create කලේ', 'හැදුවේ කොහොමද', 'work කරන්නේ කොහොමද']
+        };
+
+        // Check creator questions
+        for (const keyword of creatorKeywords[language] || creatorKeywords.en) {
+            if (lowerMessage.includes(keyword)) {
+                return config.STATIC_RESPONSES.creator[language];
+            }
+        }
+
+        // Check how-made questions
+        for (const keyword of howMadeKeywords[language] || howMadeKeywords.en) {
+            if (lowerMessage.includes(keyword)) {
+                return config.STATIC_RESPONSES.how_made[language];
+            }
+        }
+
+        return null;
+    }
+
     // Main message handler
     async handleMessage(message, userInfo) {
         const { userId, userName, isGroup, groupId } = userInfo;
@@ -60,6 +93,43 @@ class AIHandler {
         try {
             // Update user session
             this.updateUserSession(userId);
+
+            // Detect language for static responses
+            const language = openAI.detectLanguage(message);
+            
+            // Check for static responses first
+            const staticResponse = this.handleStaticResponse(message, language);
+            if (staticResponse) {
+                // Save static response to Firebase
+                await firebaseDB.saveChatMessage(userId, {
+                    role: 'user',
+                    content: message,
+                    timestamp: Date.now(),
+                    userName: userName,
+                    isGroup: isGroup,
+                    groupId: groupId
+                });
+
+                await firebaseDB.saveChatMessage(userId, {
+                    role: 'assistant',
+                    content: staticResponse,
+                    timestamp: Date.now(),
+                    language: language,
+                    emotion: 'happy',
+                    isStatic: true
+                });
+
+                console.log(`✅ Static response sent to ${userName}`);
+                
+                return {
+                    success: true,
+                    message: staticResponse,
+                    language: language,
+                    emotion: 'happy',
+                    isStatic: true,
+                    session: this.getUserSession(userId)
+                };
+            }
 
             // Save user message to Firebase
             await firebaseDB.saveChatMessage(userId, {
@@ -76,8 +146,8 @@ class AIHandler {
             
             console.log(`💬 Processing message from ${userName} (${userId}): ${message.substring(0, 50)}...`);
 
-            // Generate AI response
-            const aiResponse = await geminiAI.generateResponse(message, userId);
+            // Generate AI response using OpenAI
+            const aiResponse = await openAI.generateResponse(message, userId);
 
             // Save AI response to Firebase
             await firebaseDB.saveChatMessage(userId, {
@@ -86,7 +156,7 @@ class AIHandler {
                 timestamp: Date.now(),
                 language: aiResponse.language,
                 emotion: aiResponse.emotion,
-                isStatic: aiResponse.isStatic
+                isStatic: false
             });
 
             // Update bot statistics
@@ -99,39 +169,35 @@ class AIHandler {
                 message: aiResponse.text,
                 language: aiResponse.language,
                 emotion: aiResponse.emotion,
-                isStatic: aiResponse.isStatic,
+                isStatic: false,
                 session: this.getUserSession(userId)
             };
 
         } catch (error) {
             console.error('❌ Error in AI handler:', error);
             
+            const language = openAI.detectLanguage(message);
             const errorResponses = {
                 en: "😵 Oops! I encountered an error. Please try again in a moment.",
                 si: "😵 අහෝ! මට දෝෂයක් ඇති විය. කරුණාකර මොහොතකින් නැවත උත්සාහ කරන්න.",
                 mixed: "😵 Aiyo! Mata error ekak athi viya. Please awasarain thawa karamu."
             };
-
-            // Detect language for error response
-            const detectedLang = geminiAI.detectLanguage(message);
             
             return {
                 success: false,
-                message: errorResponses[detectedLang] || errorResponses.en,
-                language: detectedLang,
+                message: errorResponses[language] || errorResponses.en,
+                language: language,
                 emotion: 'sad',
                 isError: true
             };
         }
     }
 
-    // Handle group messages (optional filtering)
+    // Handle group messages
     async handleGroupMessage(message, userInfo) {
         const { userId, userName, groupId, groupName } = userInfo;
         
         // You can add group-specific logic here
-        // For example, only respond when mentioned or in specific groups
-        
         return await this.handleMessage(message, userInfo);
     }
 
@@ -160,7 +226,9 @@ class AIHandler {
     async clearUserHistory(userId) {
         try {
             await firebaseDB.clearUserHistory(userId);
-            geminiAI.clearUserHistory(userId);
+            if (openAI.conversationHistory) {
+                openAI.conversationHistory.delete(userId);
+            }
             this.userSessions.delete(userId);
             
             return {
