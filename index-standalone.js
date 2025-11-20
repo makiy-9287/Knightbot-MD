@@ -26,7 +26,7 @@ class SimpleGeminiAI {
     constructor() {
         this.genAI = new GoogleGenerativeAI(settings.GEMINI_API_KEY);
         this.model = this.genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
+            model: "gemini-2.0-flash",
             generationConfig: {
                 temperature: 0.7,
                 topK: 40,
