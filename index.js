@@ -19,7 +19,6 @@ const {
 } = require("@whiskeysockets/baileys");
 const NodeCache = require("node-cache");
 const pino = require("pino");
-const readline = require("readline");
 
 // Import AI and Firebase
 const GeminiAI = require('./lib/gemini');
@@ -36,7 +35,7 @@ const useMobile = process.argv.includes("--mobile");
 const userSessions = new Map();
 
 // Readline interface for pairing code
-const rl = readline.createInterface({
+const rl = require('readline').createInterface({
     input: process.stdin,
     output: process.stdout
 });
@@ -48,7 +47,7 @@ async function startAIBot() {
         console.log(chalk.green.bold('🚀 Starting Malith\'s AI WhatsApp Bot...'));
         console.log(chalk.cyan('🤖 Powered by Gemini AI 2.0 Flash'));
         
-        const { version, isLatest } = await fetchLatestBaileysVersion();
+        const { version } = await fetchLatestBaileysVersion();
         const { state, saveCreds } = await useMultiFileAuthState('./session');
         const msgRetryCounterCache = new NodeCache();
 
@@ -56,10 +55,11 @@ async function startAIBot() {
             version,
             logger: pino({ level: 'silent' }),
             printQRInTerminal: !pairingCode,
-            browser: ["Malith AI Bot", "Chrome", "20.0.04"],
+            mobile: useMobile,
+            browser: ["Ubuntu", "Chrome", "20.0.04"],
             auth: {
                 creds: state.creds,
-                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
+                keys: makeCacheableSignalKeyStore(state.keys, pino().child({ level: "fatal" })),
             },
             markOnlineOnConnect: true,
             generateHighQualityLinkPreview: true,
@@ -67,49 +67,113 @@ async function startAIBot() {
             msgRetryCounterCache,
             defaultQueryTimeoutMs: 60000,
             connectTimeoutMs: 60000,
-            keepAliveIntervalMs: 10000,
         });
 
         // Save credentials when updated
         bot.ev.on('creds.update', saveCreds);
 
-        // Handle pairing code
-        if (pairingCode && !bot.authState.creds.registered) {
-            if (useMobile) throw new Error('Cannot use pairing code with mobile api');
+        // Handle connection updates FIRST
+        bot.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, qr } = update;
 
-            let phoneNumber = await question(chalk.blue.bold('📱 Enter your WhatsApp number (format: 94741907061): '));
-            
-            // Clean the phone number
-            phoneNumber = phoneNumber.replace(/[^0-9]/g, '');
-            
-            if (!phoneNumber) {
-                phoneNumber = "94741907061"; // Default to your number
+            // Show QR code if not using pairing code
+            if (qr && !pairingCode) {
+                console.log(chalk.yellow('\n📱 Scan this QR code with WhatsApp:'));
+                qrcode.generate(qr, { small: true });
             }
 
-            console.log(chalk.yellow('🔄 Requesting pairing code...'));
-            
-            setTimeout(async () => {
+            // Handle pairing code when connection is ready but not authenticated
+            if (pairingCode && connection === 'open' && !state.creds.registered) {
+                console.log(chalk.blue('\n🔐 Pairing mode activated...'));
+                
                 try {
-                    let code = await bot.requestPairingCode(phoneNumber);
-                    code = code?.match(/.{1,4}/g)?.join("-") || code;
-                    console.log(chalk.green.bold('✅ Pairing Code:'), chalk.white.bgGreen(code));
-                    console.log(chalk.cyan('\n📝 How to use:'));
-                    console.log(chalk.cyan('1. Open WhatsApp → Settings → Linked Devices'));
-                    console.log(chalk.cyan('2. Tap "Link a Device"'));
-                    console.log(chalk.cyan('3. Enter the code: ') + chalk.white.bgGreen(code));
-                    console.log(chalk.cyan('4. You\'re connected! 🎉'));
+                    let phoneNumber = await question(chalk.blue.bold('📱 Enter your WhatsApp number (format: 94741907061): '));
+                    
+                    // Clean the phone number
+                    phoneNumber = phoneNumber.replace(/[^0-9]/g, '');
+                    
+                    if (!phoneNumber) {
+                        phoneNumber = "94741907061"; // Default to your number
+                    }
+
+                    console.log(chalk.yellow(`🔄 Requesting pairing code for ${phoneNumber}...`));
+                    
+                    // Request pairing code
+                    const code = await bot.requestPairingCode(phoneNumber);
+                    const formattedCode = code.match(/.{1,4}/g).join('-');
+                    
+                    console.log(chalk.green.bold('\n✅ PAIRING CODE:'), chalk.white.bgGreen.bold(` ${formattedCode} `));
+                    console.log(chalk.cyan('\n📝 How to use this code:'));
+                    console.log(chalk.cyan('1. Open WhatsApp on your phone'));
+                    console.log(chalk.cyan('2. Go to Settings → Linked Devices'));
+                    console.log(chalk.cyan('3. Tap "Link a Device"'));
+                    console.log(chalk.cyan('4. Enter this code: ') + chalk.white.bgGreen.bold(` ${formattedCode} `));
+                    console.log(chalk.cyan('5. Wait for connection...'));
+                    console.log(chalk.yellow('\n⏳ Waiting for you to enter the code in WhatsApp...'));
+                    
                 } catch (error) {
                     console.error(chalk.red('❌ Error getting pairing code:'), error);
+                    console.log(chalk.yellow('🔄 Restarting bot...'));
+                    await delay(3000);
+                    startAIBot();
                 }
-            }, 3000);
-        }
+            }
 
-        // Handle QR code
-        bot.ev.on('connection.update', (update) => {
-            const { qr } = update;
-            if (qr && !pairingCode) {
-                console.log(chalk.yellow('📱 Scan this QR code with WhatsApp:'));
-                qrcode.generate(qr, { small: true });
+            if (connection === 'connecting') {
+                console.log(chalk.blue('🔄 Connecting to WhatsApp...'));
+            }
+
+            if (connection === 'open') {
+                console.log(chalk.green.bold('✅ Successfully connected to WhatsApp!'));
+                console.log(chalk.cyan(`🤖 Bot User: ${bot.user?.name || bot.user?.id || 'Unknown'}`));
+                
+                // Close readline if it's open
+                if (rl && !rl.closed) {
+                    rl.close();
+                }
+
+                // Send startup message to owner
+                try {
+                    const ownerJid = global.owner;
+                    if (ownerJid) {
+                        await bot.sendMessage(ownerJid, {
+                            text: `🤖 *Malith\'s AI Bot Started Successfully!*\n\n✅ *Status:* Online and Ready!\n⏰ *Time:* ${new Date().toLocaleString()}\n🚀 *Powered by:* Gemini AI 2.0 Flash\n🌐 *Languages:* Sinhala, English, Singlish\n\nI\'m now ready to assist your friends! 🎉`
+                        });
+                    }
+                } catch (error) {
+                    console.log('ℹ️ Could not send startup message to owner');
+                }
+
+                // Display bot info
+                showBotInfo();
+            }
+
+            if (connection === 'close') {
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+                console.log(chalk.yellow(`🔌 Connection closed. Status: ${statusCode}`));
+
+                if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+                    console.log(chalk.red('❌ Session logged out. Please re-authenticate.'));
+                    try {
+                        if (fs.existsSync('./session')) {
+                            fs.rmSync('./session', { recursive: true, force: true });
+                            console.log(chalk.yellow('🗑️ Session folder cleared.'));
+                        }
+                    } catch (error) {
+                        console.error('Error clearing session:', error);
+                    }
+                }
+
+                if (shouldReconnect) {
+                    console.log(chalk.blue('🔄 Reconnecting in 5 seconds...'));
+                    await delay(5000);
+                    startAIBot();
+                } else {
+                    console.log(chalk.red('❌ Cannot reconnect. Please restart the bot.'));
+                    process.exit(1);
+                }
             }
         });
 
@@ -139,7 +203,7 @@ async function startAIBot() {
 
                 // Ignore messages from groups unless mentioned
                 if (isGroup) {
-                    const botJid = bot.user.id.split(':')[0] + '@s.whatsapp.net';
+                    const botJid = bot.user?.id.split(':')[0] + '@s.whatsapp.net';
                     const mentionedJid = message.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
                     if (!mentionedJid.includes(botJid) && !text.includes('@' + botJid.split('@')[0])) {
                         return;
@@ -151,12 +215,18 @@ async function startAIBot() {
                 console.log(chalk.blue(`📩 [${isGroup ? 'GROUP' : 'DM'}] ${userName}: ${text}`));
 
                 // Mark as read
-                if (bot.readMessages) {
+                try {
                     await bot.readMessages([message.key]);
+                } catch (error) {
+                    // Ignore read errors
                 }
 
                 // Typing indicator
-                await bot.sendPresenceUpdate('composing', userJid);
+                try {
+                    await bot.sendPresenceUpdate('composing', userJid);
+                } catch (error) {
+                    // Ignore presence errors
+                }
 
                 // Get or create user session
                 let userSession = userSessions.get(userJid);
@@ -180,11 +250,15 @@ async function startAIBot() {
                 // Update session data
                 userSession.conversationCount++;
                 userSession.lastActive = new Date().toISOString();
-                userSession.userName = userName; // Update name if changed
+                userSession.userName = userName;
                 await firebaseManager.saveSession(userJid, userSession);
 
                 // Stop typing
-                await bot.sendPresenceUpdate('paused', userJid);
+                try {
+                    await bot.sendPresenceUpdate('paused', userJid);
+                } catch (error) {
+                    // Ignore presence errors
+                }
 
                 // Send response
                 await bot.sendMessage(userJid, { text: aiResponse });
@@ -205,76 +279,19 @@ async function startAIBot() {
             }
         });
 
-        // Connection handling
-        bot.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect } = update;
-
-            if (connection === 'connecting') {
-                console.log(chalk.blue('🔄 Connecting to WhatsApp...'));
-            }
-
-            if (connection === 'open') {
-                console.log(chalk.green.bold('✅ Successfully connected to WhatsApp!'));
-                console.log(chalk.cyan(`🤖 Bot User: ${bot.user.name || 'Unknown'}`));
-                
-                // Send startup message to owner
-                try {
-                    const ownerJid = global.owner;
-                    await bot.sendMessage(ownerJid, {
-                        text: `🤖 *Malith\'s AI Bot Started Successfully!*\n\n✅ *Status:* Online and Ready!\n⏰ *Time:* ${new Date().toLocaleString()}\n🚀 *Powered by:* Gemini AI 2.0 Flash\n🌐 *Languages:* Sinhala, English, Singlish\n\nI\'m now ready to assist your friends! 🎉`
-                    });
-                } catch (error) {
-                    console.log('ℹ️ Could not send startup message to owner');
-                }
-
-                // Display bot info
-                showBotInfo();
-            }
-
-            if (connection === 'close') {
-                const statusCode = lastDisconnect?.error?.output?.statusCode;
-                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-
-                console.log(chalk.yellow(`🔌 Connection closed. Status: ${statusCode}`));
-                console.log(chalk.yellow(`🔄 Reconnecting: ${shouldReconnect}`));
-
-                if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-                    console.log(chalk.red('❌ Session logged out. Please re-authenticate.'));
-                    try {
-                        require('fs').rmSync('./session', { recursive: true, force: true });
-                        console.log(chalk.yellow('🗑️ Session folder cleared.'));
-                    } catch (error) {
-                        console.error('Error clearing session:', error);
-                    }
-                }
-
-                if (shouldReconnect) {
-                    console.log(chalk.blue('🔄 Reconnecting in 5 seconds...'));
-                    await delay(5000);
-                    startAIBot();
-                } else {
-                    console.log(chalk.red('❌ Cannot reconnect. Please restart the bot.'));
-                    process.exit(1);
-                }
-            }
-        });
-
         // Anti-call feature
         bot.ev.on('call', async (callData) => {
             try {
+                if (!callData || !callData.length) return;
+                
                 const call = callData[0];
                 const callerJid = call.from;
                 
+                if (!callerJid) return;
+                
                 console.log(chalk.yellow(`📞 Call received from: ${callerJid}`));
                 
-                // Reject call
-                try {
-                    await bot.rejectCall(call.id, callerJid);
-                } catch (rejectError) {
-                    // Ignore rejection errors
-                }
-                
-                // Send message
+                // Send message first
                 await bot.sendMessage(callerJid, {
                     text: '📵 *Auto Call Rejection*\n\nI\'m an AI text-based assistant and cannot receive calls. \n\nPlease send a text message instead! 💬\n\n_This is an automated response_'
                 });
@@ -286,12 +303,7 @@ async function startAIBot() {
 
         // Group events
         bot.ev.on('group-participants.update', async (update) => {
-            console.log(chalk.blue('👥 Group update:', update));
-        });
-
-        // Contacts update
-        bot.ev.on('contacts.update', (contacts) => {
-            console.log(chalk.blue('📱 Contacts updated:', contacts.length));
+            console.log(chalk.blue('👥 Group update:', update.id));
         });
 
         return bot;
@@ -330,7 +342,9 @@ process.on('unhandledRejection', (error) => {
 // Cleanup on exit
 process.on('SIGINT', () => {
     console.log(chalk.yellow('\n🛑 Shutting down bot...'));
-    if (rl) rl.close();
+    if (rl && !rl.closed) {
+        rl.close();
+    }
     process.exit(0);
 });
 
