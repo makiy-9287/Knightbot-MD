@@ -1,25 +1,61 @@
 {
-  "name": "malith-ai-whatsapp-bot",
-  "version": "2.0.0",
-  "description": "Multilingual AI WhatsApp Bot with Gemini",
-  "main": "index.js",
+  "name": "malith-ai-whatsapp-bot-enhanced",
+  "version": "3.0.0",
+  "description": "Enhanced Multilingual AI WhatsApp Bot with Gemini AI, Memory, Security & Media Processing",
+  "main": "index-enhanced.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "pair": "node index.js --pairing-code",
-    "mobile": "node index.js --mobile"
+    "start": "node index-enhanced.js",
+    "dev": "nodemon index-enhanced.js",
+    "pair": "node index-enhanced.js --pairing-code",
+    "test": "node test-bot.js",
+    "clean": "rm -rf session assets/temp/*",
+    "backup": "node -e \"require('./lib/memory-manager').backupMemory()\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@whiskeysockets/baileys": "^6.4.0",
-    "firebase": "^10.7.1",
     "axios": "^1.6.0",
     "chalk": "^4.1.2",
     "dotenv": "^16.3.0",
     "pino": "^8.15.0",
     "node-cache": "^5.1.2",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "firebase": "^10.7.1"
   },
-  "keywords": ["whatsapp-bot", "gemini-ai", "multilingual"],
-  "author": "Malith Lakshan"
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  },
+  "keywords": [
+    "whatsapp-bot",
+    "gemini-ai",
+    "multilingual",
+    "ai-chatbot",
+    "whatsapp-automation",
+    "image-processing",
+    "sinhala-ai",
+    "malith-lakshan"
+  ],
+  "author": {
+    "name": "Malith Lakshan",
+    "email": "malith@example.com",
+    "url": "https://github.com/malith-lakshan"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/malith-lakshan/ai-whatsapp-bot"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=7.0.0"
+  },
+  "files": [
+    "index-enhanced.js",
+    "lib/",
+    "data/",
+    "config/",
+    "assets/",
+    "settings.js",
+    "package.json"
+  ]
 }
