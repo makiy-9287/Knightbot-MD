@@ -1,4 +1,3 @@
-// settings.js
 require('dotenv').config();
 
 module.exports = {
@@ -23,8 +22,10 @@ module.exports = {
     
     // Bot Settings
     sessionWriteInterval: 10000,
-    maxConversationHistory: 10,
-    version: "2.0"
+    maxConversationHistory: 15,
+    version: "2.0",
+    autoReadMessages: true,
+    antiCall: true
 };
 
 global.owner = '94741907061@s.whatsapp.net';
