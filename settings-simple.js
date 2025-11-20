@@ -7,7 +7,7 @@ module.exports = {
     
     // API Keys
     GEMINI_API_KEY: "AIzaSyBr8g6SYD9ebRLb3KrrTwCKH_mXxWp7EJI",
-    GEMINI_MODEL: "gemini-1.5-flash",
+    GEMINI_MODEL: "gemini-2.0-flash",
     
     // Simple Settings
     version: "3.1.0"
