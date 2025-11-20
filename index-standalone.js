@@ -27,7 +27,11 @@ class SimpleGeminiAI {
         this.genAI = new GoogleGenerativeAI(settings.GEMINI_API_KEY);
         this.model = this.genAI.getGenerativeModel({ 
             model: "gemini-2.0-flash",
-           
+            generationConfig: {
+                temperature: 0.7,
+                topK: 40,
+                topP: 0.95,
+                
             }
         });
         console.log('🚀 Gemini 1.5 Flash loaded with 8192 token limit');
