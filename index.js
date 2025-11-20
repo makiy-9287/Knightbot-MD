@@ -1,5 +1,5 @@
 /**
- * Knight Bot - A WhatsApp AI Bot
+ * Laky AI Bot - Gemini Powered WhatsApp Bot
  * Copyright (c) 2024 Malith Lakshan
  * 
  * This program is free software: you can redistribute it and/or modify
@@ -7,91 +7,84 @@
  * 
  * Credits:
  * - Baileys Library by @adiwajshing
- * - Gemini AI by Google
- * - Firebase by Google
+ * - Google Gemini AI
+ * - Firebase Realtime Database
  */
 
+require('dotenv').config();
 const { Boom } = require('@hapi/boom')
 const fs = require('fs')
 const chalk = require('chalk')
-const FileType = require('file-type')
 const path = require('path')
-const axios = require('axios')
-const { handleMessages, handleGroupParticipantUpdate, handleStatus } = require('./ai-main');
-const PhoneNumber = require('awesome-phonenumber')
-const { smsg, isUrl, generateMessageTag, getBuffer, getSizeMedia, fetch, await, sleep, reSize } = require('./lib/myfunc')
-const {
-    default: makeWASocket,
-    useMultiFileAuthState,
-    DisconnectReason,
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    DisconnectReason, 
     fetchLatestBaileysVersion,
-    generateForwardMessageContent,
-    prepareWAMessageMedia,
-    generateWAMessageFromContent,
-    generateMessageID,
-    downloadContentFromMessage,
-    jidDecode,
-    proto,
-    jidNormalizedUser,
     makeCacheableSignalKeyStore,
+    jidDecode,
     delay
 } = require("@whiskeysockets/baileys")
 const NodeCache = require("node-cache")
 const pino = require("pino")
 const readline = require("readline")
-const { parsePhoneNumber } = require("libphonenumber-js")
-const { PHONENUMBER_MCC } = require('@whiskeysockets/baileys/lib/Utils/generics')
-const { rmSync, existsSync } = require('fs')
-const { join } = require('path')
 
+// Import AI handler
+const { generateAIResponse, isSpecialCommand } = require('./gemini-handler')
+const { saveConversation, clearConversationHistory } = require('./firebase-config')
 
+// Configuration
+const BOT_NAME = process.env.BOT_NAME || "LAKY AI BOT"
+const OWNER_NAME = process.env.OWNER_NAME || "Malith Lakshan"
+const OWNER_NUMBER = process.env.OWNER_NUMBER || "94741907061"
 
-// Memory optimization - Force garbage collection if available
-setInterval(() => {
-    if (global.gc) {
-        global.gc()
-        console.log('🧹 Garbage collection completed')
+// Store for basic contact info (simplified)
+const store = {
+    contacts: {},
+    readFromFile: () => {},
+    writeToFile: () => {},
+    bind: (ev) => {
+        ev.on('contacts.update', (update) => {
+            for (let contact of update) {
+                const id = contact.id
+                if (store.contacts) store.contacts[id] = { id, name: contact.notify }
+            }
+        })
     }
-}, 60_000) // every 1 minute
+}
 
-// Memory monitoring - Restart if RAM gets too high
-setInterval(() => {
-    const used = process.memoryUsage().rss / 1024 / 1024
-    if (used > 400) {
-        console.log('⚠️ RAM too high (>400MB), restarting bot...')
-        process.exit(1) // Panel will auto-restart
-    }
-}, 30_000) // check every 30 seconds
+let phoneNumber = OWNER_NUMBER
+let owner = OWNER_NAME
 
-
-global.botname = "LAKY AI BOT"
+global.botname = BOT_NAME
 global.themeemoji = "🤖"
 const pairingCode = !!phoneNumber || process.argv.includes("--pairing-code")
 const useMobile = process.argv.includes("--mobile")
 
-// Only create readline interface if we're in an interactive environment
+// Readline interface for pairing code
 const rl = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null
 const question = (text) => {
     if (rl) {
         return new Promise((resolve) => rl.question(text, resolve))
     } else {
-        // In non-interactive environment, use ownerNumber from settings
-        return Promise.resolve(settings.ownerNumber || phoneNumber)
+        return Promise.resolve(phoneNumber)
     }
 }
 
+// Track typing states
+const typingUsers = new Set()
 
-async function startXeonBotInc() {
+async function startLakyBot() {
     try {
         let { version, isLatest } = await fetchLatestBaileysVersion()
         const { state, saveCreds } = await useMultiFileAuthState(`./session`)
         const msgRetryCounterCache = new NodeCache()
 
-        const XeonBotInc = makeWASocket({
+        const LakyBot = makeWASocket({
             version,
             logger: pino({ level: 'silent' }),
             printQRInTerminal: !pairingCode,
-            browser: ["Ubuntu", "Chrome", "20.0.04"],
+            browser: ["Laky AI Bot", "Chrome", "1.0.0"],
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
@@ -100,9 +93,7 @@ async function startXeonBotInc() {
             generateHighQualityLinkPreview: true,
             syncFullHistory: false,
             getMessage: async (key) => {
-                let jid = jidNormalizedUser(key.remoteJid)
-                let msg = await store.loadMessage(jid, key.id)
-                return msg?.message || ""
+                return "" // Simplified - no message storage
             },
             msgRetryCounterCache,
             defaultQueryTimeoutMs: 60000,
@@ -111,60 +102,13 @@ async function startXeonBotInc() {
         })
 
         // Save credentials when they update
-        XeonBotInc.ev.on('creds.update', saveCreds)
+        LakyBot.ev.on('creds.update', saveCreds)
 
-        store.bind(XeonBotInc.ev)
+        // Bind store
+        store.bind(LakyBot.ev)
 
-        // Message handling with AI
-        XeonBotInc.ev.on('messages.upsert', async chatUpdate => {
-            try {
-                const mek = chatUpdate.messages[0]
-                if (!mek.message) return
-                mek.message = (Object.keys(mek.message)[0] === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message
-                if (mek.key && mek.key.remoteJid === 'status@broadcast') {
-                    await handleStatus(XeonBotInc, chatUpdate);
-                    return;
-                }
-                // In private mode, only block non-group messages (allow groups for moderation)
-                if (!XeonBotInc.public && !mek.key.fromMe && chatUpdate.type === 'notify') {
-                    const isGroup = mek.key?.remoteJid?.endsWith('@g.us')
-                    if (!isGroup) return // Block DMs in private mode, but allow group messages
-                }
-                if (mek.key.id.startsWith('BAE5') && mek.key.id.length === 16) return
-
-                // Clear message retry cache to prevent memory bloat
-                if (XeonBotInc?.msgRetryCounterCache) {
-                    XeonBotInc.msgRetryCounterCache.clear()
-                }
-
-                try {
-                    // Use AI message handler
-                    await handleMessages(XeonBotInc, chatUpdate, true)
-                } catch (err) {
-                    console.error("Error in handleMessages:", err)
-                    // Only try to send error message if we have a valid chatId
-                    if (mek.key && mek.key.remoteJid) {
-                        await XeonBotInc.sendMessage(mek.key.remoteJid, {
-                            text: '❌ An error occurred while processing your message. Please try again! 😊\n\nමොකක්හරි වැරැද්දක් වෙලා. කරුණාකර නැවත උත්සාහ කරන්න! 😊',
-                            contextInfo: {
-                                forwardingScore: 1,
-                                isForwarded: true,
-                                forwardedNewsletterMessageInfo: {
-                                    newsletterJid: '120363161513685998@newsletter',
-                                    newsletterName: 'Laky AI Bot',
-                                    serverMessageId: -1
-                                }
-                            }
-                        }).catch(console.error);
-                    }
-                }
-            } catch (err) {
-                console.error("Error in messages.upsert:", err)
-            }
-        })
-
-        // Add these event handlers for better functionality
-        XeonBotInc.decodeJid = (jid) => {
+        // Utility functions
+        LakyBot.decodeJid = (jid) => {
             if (!jid) return jid
             if (/:\d+@/gi.test(jid)) {
                 let decode = jidDecode(jid) || {}
@@ -172,37 +116,137 @@ async function startXeonBotInc() {
             } else return jid
         }
 
-        XeonBotInc.ev.on('contacts.update', update => {
-            for (let contact of update) {
-                let id = XeonBotInc.decodeJid(contact.id)
-                if (store && store.contacts) store.contacts[id] = { id, name: contact.notify }
+        LakyBot.getName = (jid) => {
+            const id = LakyBot.decodeJid(jid)
+            if (id.endsWith("@g.us")) {
+                return store.contacts[id]?.name || "Group Chat"
+            } else {
+                return store.contacts[id]?.name || "User"
+            }
+        }
+
+        // Main message handler with AI
+        LakyBot.ev.on('messages.upsert', async chatUpdate => {
+            try {
+                const mek = chatUpdate.messages[0]
+                if (!mek.message) return
+                
+                // Extract message content
+                mek.message = (Object.keys(mek.message)[0] === 'ephemeralMessage') 
+                    ? mek.message.ephemeralMessage.message 
+                    : mek.message
+
+                // Ignore status broadcasts
+                if (mek.key && mek.key.remoteJid === 'status@broadcast') return
+                if (mek.key.id.startsWith('BAE5') && mek.key.id.length === 16) return
+
+                // Get message text
+                const messageType = Object.keys(mek.message)[0]
+                let messageText = ''
+                
+                if (messageType === 'conversation') {
+                    messageText = mek.message.conversation
+                } else if (messageType === 'extendedTextMessage') {
+                    messageText = mek.message.extendedTextMessage.text
+                } else {
+                    return // Ignore non-text messages
+                }
+
+                if (!messageText || !messageText.trim()) return
+
+                // Get user info
+                const userJid = mek.key.remoteJid
+                const userName = mek.pushName || LakyBot.getName(userJid)
+                const isGroup = userJid.endsWith('@g.us')
+                const userId = mek.key.fromMe ? LakyBot.user.id : (mek.key.participant || mek.key.remoteJid)
+                const cleanUserId = userId.replace(/[^a-zA-Z0-9]/g, '_')
+
+                console.log(chalk.cyan(`📩 Message from ${userName} (${isGroup ? 'Group' : 'Private'}): ${messageText.substring(0, 50)}...`))
+
+                // Send typing indicator
+                if (!typingUsers.has(userJid)) {
+                    typingUsers.add(userJid)
+                    await LakyBot.sendPresenceUpdate('composing', userJid)
+                }
+
+                try {
+                    // Check for special commands
+                    const command = isSpecialCommand(messageText)
+                    
+                    if (command === 'clear') {
+                        await clearConversationHistory(cleanUserId)
+                        await LakyBot.sendMessage(userJid, {
+                            text: '🗑️ Conversation cleared! Let\'s start fresh! ✨\n\nපැරණි සංවාද මකා දැමුවා! අලුතෙන් පටන් ගමු! ✨'
+                        })
+                        return
+                    }
+                    
+                    if (command === 'help') {
+                        const helpText = `🤖 *Laky AI Assistant Help* 🤖
+
+*Commands:*
+• Just chat naturally - I'll respond!
+• "clear" - Clear conversation history
+• "help" - Show this message
+
+*Languages I speak:*
+🇱🇰 Sinhala (සිංහල)
+🇬🇧 English
+🌏 Singlish (Mix)
+
+*About Me:*
+I'm an AI assistant created by ${OWNER_NAME} to help and chat with you! I understand emotions and respond with appropriate emojis 😊
+
+*Creator Contact:*
+📱 +${OWNER_NUMBER}
+
+Just send me any message and I'll respond naturally! 💬✨`
+                        
+                        await LakyBot.sendMessage(userJid, { text: helpText })
+                        return
+                    }
+
+                    // Generate AI response
+                    const aiResult = await generateAIResponse(messageText, cleanUserId, userName)
+
+                    if (aiResult.success) {
+                        // Save conversation to Firebase
+                        await saveConversation(cleanUserId, messageText, aiResult.response)
+                        
+                        // Send AI response
+                        await LakyBot.sendMessage(userJid, { 
+                            text: aiResult.response 
+                        })
+                        
+                        console.log(chalk.green(`✅ AI Response sent (${aiResult.language}, ${aiResult.emotion})`))
+                    } else {
+                        // Send error response
+                        await LakyBot.sendMessage(userJid, { 
+                            text: aiResult.response 
+                        })
+                        console.log(chalk.red(`❌ Error response sent`))
+                    }
+
+                } catch (error) {
+                    console.error('❌ Error processing message:', error.message)
+                    
+                    // Send error message to user
+                    await LakyBot.sendMessage(userJid, {
+                        text: '❌ Oops! Something went wrong. Please try again! 😊\n\nඅපොයි! මොකක්හරි වැරැද්දක්. කරුණාකර නැවත උත්සාහ කරන්න! 😊'
+                    })
+                } finally {
+                    // Remove typing indicator
+                    typingUsers.delete(userJid)
+                    await LakyBot.sendPresenceUpdate('paused', userJid)
+                }
+
+            } catch (err) {
+                console.error("Error in messages.upsert:", err)
             }
         })
 
-        XeonBotInc.getName = (jid, withoutContact = false) => {
-            id = XeonBotInc.decodeJid(jid)
-            withoutContact = XeonBotInc.withoutContact || withoutContact
-            let v
-            if (id.endsWith("@g.us")) return new Promise(async (resolve) => {
-                v = store.contacts[id] || {}
-                if (!(v.name || v.subject)) v = XeonBotInc.groupMetadata(id) || {}
-                resolve(v.name || v.subject || PhoneNumber('+' + id.replace('@s.whatsapp.net', '')).getNumber('international'))
-            })
-            else v = id === '0@s.whatsapp.net' ? {
-                id,
-                name: 'WhatsApp'
-            } : id === XeonBotInc.decodeJid(XeonBotInc.user.id) ?
-                XeonBotInc.user :
-                (store.contacts[id] || {})
-            return (withoutContact ? '' : v.name) || v.subject || v.verifiedName || PhoneNumber('+' + jid.replace('@s.whatsapp.net', '')).getNumber('international')
-        }
-
-        XeonBotInc.public = true
-
-        XeonBotInc.serializeM = (m) => smsg(XeonBotInc, m, store)
-
         // Handle pairing code
-        if (pairingCode && !XeonBotInc.authState.creds.registered) {
+        if (pairingCode && !LakyBot.authState.creds.registered) {
             if (useMobile) throw new Error('Cannot use pairing code with mobile api')
 
             let phoneNumber
@@ -212,10 +256,8 @@ async function startXeonBotInc() {
                 phoneNumber = await question(chalk.bgBlack(chalk.greenBright(`Please type your WhatsApp number 😊\nFormat: 94741907061 (without + or spaces) : `)))
             }
 
-            // Clean the phone number - remove any non-digit characters
             phoneNumber = phoneNumber.replace(/[^0-9]/g, '')
 
-            // Validate the phone number using awesome-phonenumber
             const pn = require('awesome-phonenumber');
             if (!pn('+' + phoneNumber).isValid()) {
                 console.log(chalk.red('Invalid phone number. Please enter your full international number without + or spaces.'));
@@ -224,7 +266,7 @@ async function startXeonBotInc() {
 
             setTimeout(async () => {
                 try {
-                    let code = await XeonBotInc.requestPairingCode(phoneNumber)
+                    let code = await LakyBot.requestPairingCode(phoneNumber)
                     code = code?.match(/.{1,4}/g)?.join("-") || code
                     console.log(chalk.black(chalk.bgGreen(`Your Pairing Code : `)), chalk.black(chalk.white(code)))
                     console.log(chalk.yellow(`\nPlease enter this code in your WhatsApp app:\n1. Open WhatsApp\n2. Go to Settings > Linked Devices\n3. Tap "Link a Device"\n4. Enter the code shown above`))
@@ -236,7 +278,7 @@ async function startXeonBotInc() {
         }
 
         // Connection handling
-        XeonBotInc.ev.on('connection.update', async (s) => {
+        LakyBot.ev.on('connection.update', async (s) => {
             const { connection, lastDisconnect, qr } = s
             
             if (qr) {
@@ -249,47 +291,28 @@ async function startXeonBotInc() {
             
             if (connection == "open") {
                 console.log(chalk.magenta(` `))
-                console.log(chalk.yellow(`🌿Connected to => ` + JSON.stringify(XeonBotInc.user, null, 2)))
+                console.log(chalk.yellow(`🌿Connected to => ` + JSON.stringify(LakyBot.user, null, 2)))
 
                 try {
-                    const botNumber = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net';
-                    await XeonBotInc.sendMessage(botNumber, {
-                        text: `🤖 *Laky AI Bot Connected!* 🎉
-
-⏰ Time: ${new Date().toLocaleString()}
-✅ Status: Online and Ready!
-🧠 AI: Gemini-Powered
-🌍 Languages: Sinhala, English, Singlish
-
-💬 Just message me naturally and I'll respond!
-
-👨‍💻 Created by: Malith Lakshan
-📱 Contact: +94741907061
-
-Let's chat! 😊✨`,
-                        contextInfo: {
-                            forwardingScore: 1,
-                            isForwarded: true,
-                            forwardedNewsletterMessageInfo: {
-                                newsletterJid: '120363161513685998@newsletter',
-                                newsletterName: 'Laky AI Bot',
-                                serverMessageId: -1
-                            }
-                        }
+                    const botNumber = LakyBot.user.id.split(':')[0] + '@s.whatsapp.net';
+                    await LakyBot.sendMessage(botNumber, {
+                        text: `🤖 ${BOT_NAME} Connected Successfully!\n\n⏰ Time: ${new Date().toLocaleString()}\n✅ Status: Online and Ready!\n\n🚀 Powered by Google Gemini AI\n💾 Memory: Firebase Database\n👨‍💻 Creator: ${OWNER_NAME}\n📱 Contact: +${OWNER_NUMBER}`
                     });
                 } catch (error) {
                     console.error('Error sending connection message:', error.message)
                 }
 
                 await delay(1999)
-                console.log(chalk.yellow(`\n\n                  ${chalk.bold.blue(`[ ${global.botname || 'LAKY AI BOT'} ]`)}\n\n`))
+                console.log(chalk.yellow(`\n\n                  ${chalk.bold.blue(`[ ${global.botname} ]`)}\n\n`))
                 console.log(chalk.cyan(`< ================================================== >`))
-                console.log(chalk.magenta(`\n${global.themeemoji || '🤖'} CREATOR: Malith Lakshan`))
-                console.log(chalk.magenta(`${global.themeemoji || '🤖'} WHATSAPP: +94741907061`))
-                console.log(chalk.magenta(`${global.themeemoji || '🤖'} AI ENGINE: Google Gemini`))
-                console.log(chalk.magenta(`${global.themeemoji || '🤖'} LANGUAGES: Sinhala, English, Singlish`))
-                console.log(chalk.green(`${global.themeemoji || '🤖'} 🤖 AI Bot Connected Successfully! ✅`))
-                console.log(chalk.blue(`Bot Version: ${settings.version || '2.0.0'}`))
+                console.log(chalk.magenta(`\n${global.themeemoji} AI Assistant: ${BOT_NAME}`))
+                console.log(chalk.magenta(`${global.themeemoji} Creator: ${owner}`))
+                console.log(chalk.magenta(`${global.themeemoji} WhatsApp: +${phoneNumber}`))
+                console.log(chalk.magenta(`${global.themeemoji} AI Engine: Google Gemini`))
+                console.log(chalk.green(`${global.themeemoji} 🤖 AI Bot Connected Successfully! ✅`))
+                console.log(chalk.blue(`🌍 Languages: Sinhala | English | Singlish`))
+                console.log(chalk.blue(`🎯 Emotion Detection: Enabled`))
+                console.log(chalk.blue(`💬 Context Memory: Enabled`))
             }
             
             if (connection === 'close') {
@@ -300,7 +323,7 @@ Let's chat! 😊✨`,
                 
                 if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
                     try {
-                        rmSync('./session', { recursive: true, force: true })
+                        require('fs').rmSync('./session', { recursive: true, force: true })
                         console.log(chalk.yellow('Session folder deleted. Please re-authenticate.'))
                     } catch (error) {
                         console.error('Error deleting session:', error)
@@ -311,79 +334,44 @@ Let's chat! 😊✨`,
                 if (shouldReconnect) {
                     console.log(chalk.yellow('Reconnecting...'))
                     await delay(5000)
-                    startXeonBotInc()
+                    startLakyBot()
                 }
             }
         })
 
-        // Track recently-notified callers to avoid spamming messages
+        // Simple anti-call handler
         const antiCallNotified = new Set();
-
-        // Anticall handler: block callers when enabled
-        XeonBotInc.ev.on('call', async (calls) => {
+        LakyBot.ev.on('call', async (calls) => {
             try {
-                const { readState: readAnticallState } = require('./commands/anticall');
-                const state = readAnticallState();
-                if (!state.enabled) return;
                 for (const call of calls) {
                     const callerJid = call.from || call.peerJid || call.chatId;
                     if (!callerJid) continue;
-                    try {
-                        // First: attempt to reject the call if supported
-                        try {
-                            if (typeof XeonBotInc.rejectCall === 'function' && call.id) {
-                                await XeonBotInc.rejectCall(call.id, callerJid);
-                            } else if (typeof XeonBotInc.sendCallOfferAck === 'function' && call.id) {
-                                await XeonBotInc.sendCallOfferAck(call.id, callerJid, 'reject');
-                            }
-                        } catch {}
-
-                        // Notify the caller only once within a short window
-                        if (!antiCallNotified.has(callerJid)) {
-                            antiCallNotified.add(callerJid);
-                            setTimeout(() => antiCallNotified.delete(callerJid), 60000);
-                            await XeonBotInc.sendMessage(callerJid, { text: '📵 Anticall is enabled. Your call was rejected and you will be blocked.' });
-                        }
-                    } catch {}
-                    // Then: block after a short delay to ensure rejection and message are processed
-                    setTimeout(async () => {
-                        try { await XeonBotInc.updateBlockStatus(callerJid, 'block'); } catch {}
-                    }, 800);
+                    
+                    if (!antiCallNotified.has(callerJid)) {
+                        antiCallNotified.add(callerJid);
+                        setTimeout(() => antiCallNotified.delete(callerJid), 60000);
+                        await LakyBot.sendMessage(callerJid, { 
+                            text: '📵 Calls are not supported. Please send a text message instead. 😊\n\nකෝල් කරන්න බෑ. කරුණාකර text එකක් යවන්න! 😊' 
+                        });
+                    }
                 }
             } catch (e) {
-                // ignore
+                // ignore call errors
             }
         });
 
-        XeonBotInc.ev.on('group-participants.update', async (update) => {
-            await handleGroupParticipantUpdate(XeonBotInc, update);
-        });
+        return LakyBot
 
-        XeonBotInc.ev.on('messages.upsert', async (m) => {
-            if (m.messages[0].key && m.messages[0].key.remoteJid === 'status@broadcast') {
-                await handleStatus(XeonBotInc, m);
-            }
-        });
-
-        XeonBotInc.ev.on('status.update', async (status) => {
-            await handleStatus(XeonBotInc, status);
-        });
-
-        XeonBotInc.ev.on('messages.reaction', async (status) => {
-            await handleStatus(XeonBotInc, status);
-        });
-
-        return XeonBotInc
     } catch (error) {
-        console.error('Error in startXeonBotInc:', error)
+        console.error('Error in startLakyBot:', error)
         await delay(5000)
-        startXeonBotInc()
+        startLakyBot()
     }
 }
 
-
 // Start the bot with error handling
-startXeonBotInc().catch(error => {
+console.log(chalk.blue('\n🚀 Starting Laky AI Bot...\n'))
+startLakyBot().catch(error => {
     console.error('Fatal error:', error)
     process.exit(1)
 })
@@ -396,6 +384,7 @@ process.on('unhandledRejection', (err) => {
     console.error('Unhandled Rejection:', err)
 })
 
+// File watch for development
 let file = require.resolve(__filename)
 fs.watchFile(file, () => {
     fs.unwatchFile(file)
