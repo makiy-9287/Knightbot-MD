@@ -1,6 +1,6 @@
 /**
- * Malith's AI WhatsApp Bot - DIRECT GEMINI CONNECTION
- * No limitations - Pure Gemini responses
+ * Malith's AI WhatsApp Bot - NATURAL CONVERSATION
+ * No over-explaining - Just natural responses
  * Created by Malith Lakshan (94741907061)
  */
 
@@ -22,18 +22,16 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const genAI = new GoogleGenerativeAI("AIzaSyBr8g6SYD9ebRLb3KrrTwCKH_mXxWp7EJI");
 const model = genAI.getGenerativeModel({ 
     model: "gemini-2.0-flash",
-    // NO generationConfig - Let Gemini decide everything
 });
 
-console.log(chalk.green('🚀 Direct Gemini 2.0 Flash Connection'));
+console.log(chalk.green('🚀 Natural Conversation Bot'));
 
 // Simple conversation memory
 const conversationMemory = new Map();
 
-async function startDirectBot() {
+async function startNaturalBot() {
     try {
-        console.log(chalk.green.bold('🤖 Starting Direct Gemini Bot...'));
-        console.log(chalk.cyan('💬 Pure Gemini responses - No limitations'));
+        console.log(chalk.green.bold('🤖 Starting Natural Conversation Bot...'));
         
         const { version } = await fetchLatestBaileysVersion();
         const { state, saveCreds } = await useMultiFileAuthState('./session');
@@ -67,11 +65,11 @@ async function startDirectBot() {
                 
                 try {
                     await bot.sendMessage('94741907061@s.whatsapp.net', {
-                        text: '🤖 Direct Gemini Bot Connected!\n\nNow using pure Gemini 2.0 Flash with no limitations! 🚀'
+                        text: '🤖 Natural Conversation Bot Active!\n\nNow responding naturally without over-explaining! 🎯'
                     });
                 } catch (error) {}
                 
-                showDirectInfo();
+                showNaturalInfo();
             }
 
             if (connection === 'close') {
@@ -79,12 +77,12 @@ async function startDirectBot() {
                 if (shouldReconnect) {
                     console.log(chalk.blue('🔄 Reconnecting...'));
                     await delay(3000);
-                    startDirectBot();
+                    startNaturalBot();
                 }
             }
         });
 
-        // DIRECT MESSAGE HANDLER - Pure Gemini
+        // NATURAL MESSAGE HANDLER
         bot.ev.on('messages.upsert', async ({ messages, type }) => {
             if (type !== 'notify') return;
 
@@ -118,18 +116,25 @@ async function startDirectBot() {
                 await bot.sendPresenceUpdate('composing', userJid);
             } catch (error) {}
 
-            // DIRECT GEMINI CALL - No limitations
             try {
-                // Get conversation history for context
+                // Get conversation history
                 const history = conversationMemory.get(userJid) || [];
                 
-                // Build natural prompt with context
-                let prompt = text;
+                // Build smart prompt for natural conversation
+                let prompt = `You are having a natural WhatsApp conversation. Respond naturally and conversationally.
+
+User's name: ${userName}
+Current message: "${text}"`;
+
+                // Add context if available
                 if (history.length > 0) {
-                    prompt = `Context from our conversation:\n${history.slice(-4).join('\n')}\n\nCurrent message: ${text}`;
+                    prompt += `\n\nPrevious messages:\n${history.slice(-4).join('\n')}`;
                 }
 
-                // Special handling for creator question
+                // Add instructions for natural behavior
+                prompt += `\n\nImportant: Respond naturally like a human in a chat. Don't explain your thought process. Don't repeat the user's question. Just give a direct, conversational response in the same language as the user.`;
+
+                // Special case for creator question
                 if (text.toLowerCase().includes('who made you') || text.toLowerCase().includes('who created you')) {
                     await bot.sendMessage(userJid, {
                         text: '🤖 I was created by Malith Lakshan! 🚀 You can contact him at: 94741907061'
@@ -137,23 +142,26 @@ async function startDirectBot() {
                     return;
                 }
 
-                // DIRECT GEMINI CALL - No restrictions
+                // Get natural response from Gemini
                 const result = await model.generateContent(prompt);
                 const response = await result.response;
-                const aiResponse = response.text().trim();
+                let aiResponse = response.text().trim();
+
+                // Clean up response - remove any thought process explanations
+                aiResponse = cleanResponse(aiResponse);
 
                 // Save to conversation memory
                 history.push(`User: ${text}`);
                 history.push(`AI: ${aiResponse}`);
-                if (history.length > 10) history.splice(0, 2); // Keep last 5 exchanges
+                if (history.length > 8) history.splice(0, 2);
                 conversationMemory.set(userJid, history);
 
-                // Send pure Gemini response
+                // Send natural response
                 await bot.sendMessage(userJid, { text: aiResponse });
-                console.log(chalk.green(`💬 Gemini: ${aiResponse}`));
+                console.log(chalk.green(`💬 Response: ${aiResponse}`));
 
             } catch (error) {
-                console.error('Gemini Error:', error);
+                console.error('Error:', error);
                 await bot.sendMessage(userJid, { 
                     text: 'Sorry, there was an error. Please try again.' 
                 });
@@ -178,28 +186,57 @@ async function startDirectBot() {
             } catch (error) {}
         });
 
-        console.log(chalk.green('✅ Direct Gemini Bot Ready!'));
+        console.log(chalk.green('✅ Natural Bot Ready!'));
         return bot;
 
     } catch (error) {
         console.error(chalk.red('Startup error:'), error);
         await delay(5000);
-        startDirectBot();
+        startNaturalBot();
     }
 }
 
-function showDirectInfo() {
+// Clean responses - remove thought process explanations
+function cleanResponse(text) {
+    // Remove common over-explaining patterns
+    const patterns = [
+        /The user is asking:/i,
+        /The user is now asking:/i,
+        /I need to respond by:/i,
+        /Therefore, I should:/i,
+        /I understand that:/i,
+        /Okay, I understand/i,
+        /I should now proceed to:/i,
+        /the user is confirming that/i,
+        /the user was indeed asking/i,
+        /I need to acknowledge/i,
+        /respond appropriately/i
+    ];
+
+    let cleaned = text;
+    patterns.forEach(pattern => {
+        cleaned = cleaned.replace(pattern, '');
+    });
+
+    // Remove extra spaces and clean up
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    
+    // If cleaning removed everything, use original
+    return cleaned.length > 10 ? cleaned : text;
+}
+
+function showNaturalInfo() {
     console.log(chalk.magenta('\n' + '═'.repeat(50)));
-    console.log(chalk.yellow.bold('     DIRECT GEMINI BOT'));
+    console.log(chalk.yellow.bold('     NATURAL CONVERSATION BOT'));
     console.log(chalk.magenta('═'.repeat(50)));
     console.log(chalk.cyan('👨‍💻 Creator: Malith Lakshan'));
     console.log(chalk.cyan('📞 Contact: 94741907061'));
-    console.log(chalk.cyan('🤖 AI: Gemini 2.0 Flash (Pure)'));
-    console.log(chalk.cyan('🔓 No limitations'));
-    console.log(chalk.cyan('💬 Natural responses'));
-    console.log(chalk.green('✅ Pure Gemini experience!'));
+    console.log(chalk.cyan('🤖 AI: Gemini 2.0 Flash'));
+    console.log(chalk.cyan('💬 Responses: Natural & Direct'));
+    console.log(chalk.cyan('🚫 No over-explaining'));
+    console.log(chalk.green('✅ Clean conversations!'));
     console.log(chalk.magenta('═'.repeat(50) + '\n'));
 }
 
 // Start bot
-startDirectBot().catch(console.error);
+startNaturalBot().catch(console.error);
