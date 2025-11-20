@@ -1,38 +1,22 @@
 {
-  "name": "knight-ai-bot",
+  "name": "gemini-whatsapp-bot",
   "version": "2.0.0",
-  "description": "Gemini AI Powered WhatsApp Bot with Multi-language Support",
+  "description": "Gemini AI WhatsApp Bot with Multilingual Support",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js --pairing-code",
-    "test": "echo \"No tests specified\" && exit 0"
+    "dev": "nodemon index.js"
   },
-  "keywords": [
-    "whatsapp-bot",
-    "ai-chatbot",
-    "gemini-ai",
-    "firebase",
-    "multi-language"
-  ],
-  "author": "Malith Lakshan",
-  "license": "MIT",
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@whiskeysockets/baileys": "^6.4.0",
-   "firebase": "^10.14.0",
-    "firebase-admin": "^12.0.0",
+    "firebase": "^10.7.1",
     "axios": "^1.6.0",
     "chalk": "^4.1.2",
     "dotenv": "^16.3.0",
-    "file-type": "^19.0.0",
-    "node-cache": "^5.1.2",
     "pino": "^8.15.0",
-    "qrcode-terminal": "^0.12.0",
-    "awesome-phonenumber": "^4.0.0",
-    "libphonenumber-js": "^1.10.0"
+    "node-cache": "^5.1.2"
   },
-  "engines": {
-    "node": ">=16.0.0"
-  }
+  "keywords": ["whatsapp-bot", "gemini-ai", "multilingual"],
+  "author": "Malith Lakshan"
 }
