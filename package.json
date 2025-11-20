@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "pair": "node index.js --pairing-code"
+    "pair": "node index.js --pairing-code",
+    "mobile": "node index.js --mobile"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
