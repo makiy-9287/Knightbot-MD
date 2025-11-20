@@ -1,11 +1,12 @@
 {
-  "name": "gemini-whatsapp-bot",
+  "name": "malith-ai-whatsapp-bot",
   "version": "2.0.0",
-  "description": "Gemini AI WhatsApp Bot with Multilingual Support",
+  "description": "Multilingual AI WhatsApp Bot with Gemini",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "pair": "node index.js --pairing-code"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
@@ -15,7 +16,8 @@
     "chalk": "^4.1.2",
     "dotenv": "^16.3.0",
     "pino": "^8.15.0",
-    "node-cache": "^5.1.2"
+    "node-cache": "^5.1.2",
+    "qrcode-terminal": "^0.12.0"
   },
   "keywords": ["whatsapp-bot", "gemini-ai", "multilingual"],
   "author": "Malith Lakshan"
