@@ -1,12 +1,11 @@
 {
-  "name": "malith-ai-simple",
+  "name": "malith-ai-standalone",
   "version": "3.1.0",
-  "description": "Simple & Powerful AI WhatsApp Bot with Maximum Message Length",
-  "main": "index-simple.js",
+  "description": "Standalone AI WhatsApp Bot with Maximum Message Length",
+  "main": "index-standalone.js",
   "scripts": {
-    "start": "node index-simple.js",
-    "simple": "node index-simple.js",
-    "dev": "nodemon index-simple.js"
+    "start": "node index-standalone.js",
+    "dev": "nodemon index-standalone.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
@@ -15,5 +14,13 @@
     "qrcode-terminal": "^0.12.0",
     "pino": "^8.15.0",
     "node-cache": "^5.1.2"
-  }
+  },
+  "keywords": [
+    "whatsapp-bot",
+    "gemini-ai",
+    "ai-chatbot",
+    "malith-lakshan"
+  ],
+  "author": "Malith Lakshan (94741907061)",
+  "license": "MIT"
 }
