@@ -1,37 +1,35 @@
 {
-  "name": "knight-ai-bot",
+  "name": "knight-bot-ai",
   "version": "2.0.0",
-  "description": "Gemini AI Powered WhatsApp Bot with Multi-language Support",
+  "description": "Gemini-powered WhatsApp AI Chatbot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js --pairing-code",
-    "test": "echo \"No tests specified\" && exit 0"
+    "dev": "nodemon index.js"
   },
-  "keywords": [
-    "whatsapp-bot",
-    "ai-chatbot",
-    "gemini-ai",
-    "firebase",
-    "multi-language"
-  ],
+  "keywords": ["whatsapp", "bot", "gemini", "ai", "chatbot"],
   "author": "Malith Lakshan",
   "license": "MIT",
   "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
     "@google/generative-ai": "^0.21.0",
-    "@whiskeysockets/baileys": "^6.4.0",
-    "firebase-admin": "^12.0.0",
-    "axios": "^1.6.0",
+    "firebase": "^10.14.0",
+    "dotenv": "^16.4.5",
+    "@hapi/boom": "^10.0.1",
     "chalk": "^4.1.2",
-    "dotenv": "^16.3.0",
-    "file-type": "^19.0.0",
+    "file-type": "^16.5.4",
+    "axios": "^1.7.2",
+    "awesome-phonenumber": "^5.4.0",
+    "libphonenumber-js": "^1.10.44",
+    "pino": "^8.16.1",
     "node-cache": "^5.1.2",
-    "pino": "^8.15.0",
     "qrcode-terminal": "^0.12.0",
-    "awesome-phonenumber": "^4.0.0",
-    "libphonenumber-js": "^1.10.0"
+    "moment-timezone": "^0.5.43"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   }
 }
