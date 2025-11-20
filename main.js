@@ -1,22 +1,19 @@
 const fs = require('fs');
 const path = require('path');
-const settings = require('./settings');
 
-// Simple message handler for compatibility
+// Message handler functions for compatibility
 async function handleMessages(bot, chatUpdate, isCommand) {
-    // Messages are now handled directly in index.js
-    // This function is kept for compatibility with existing structure
+    // Messages are handled directly in index.js
     return true;
 }
 
 async function handleGroupParticipantUpdate(bot, update) {
-    console.log('Group participant update:', update);
-    // Future feature: Welcome messages or group management
+    console.log('👥 Group participant update:', update);
     return true;
 }
 
 async function handleStatus(bot, statusUpdate) {
-    // Ignore status updates for now
+    // Status updates are ignored for now
     return true;
 }
 
