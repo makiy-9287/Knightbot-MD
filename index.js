@@ -1,6 +1,6 @@
 /**
- * Malith's Gemini AI WhatsApp Bot - WORKING VERSION
- * Powered by Google Gemini AI
+ * Malith's Gemini AI WhatsApp Bot - FINAL WORKING VERSION
+ * No Firebase - No Errors - Fully Functional
  * Created by Malith Lakshan (94741907061)
  */
 
@@ -18,32 +18,77 @@ const {
 const NodeCache = require("node-cache");
 const pino = require("pino");
 
-// Import AI and Firebase
+// Import AI only - No Firebase
 const GeminiAI = require('./lib/gemini');
-const FirebaseManager = require('./lib/firebase');
 
-// Initialize AI and Database
+// Initialize AI
 const aiBot = new GeminiAI();
-const firebaseManager = new FirebaseManager();
 
-// Store for user sessions
-const userSessions = new Map();
+// Simple local session manager (replaces Firebase)
+class SessionManager {
+    constructor() {
+        this.sessions = new Map();
+        console.log(chalk.green('💾 Using fast local session storage'));
+    }
+
+    async getSession(userId) {
+        return this.sessions.get(userId) || {
+            userId: userId,
+            conversationCount: 0,
+            createdAt: new Date().toISOString()
+        };
+    }
+
+    async saveSession(userId, sessionData) {
+        this.sessions.set(userId, sessionData);
+        return true;
+    }
+
+    async updateConversation(userId, userMessage, botResponse) {
+        let session = this.sessions.get(userId) || {
+            userId: userId,
+            conversations: [],
+            conversationCount: 0,
+            createdAt: new Date().toISOString()
+        };
+
+        // Add new conversation
+        session.conversations = session.conversations || [];
+        session.conversations.push({
+            user: userMessage,
+            bot: botResponse,
+            timestamp: new Date().toISOString()
+        });
+
+        // Keep only last 10 conversations (save memory)
+        if (session.conversations.length > 10) {
+            session.conversations = session.conversations.slice(-10);
+        }
+
+        session.conversationCount++;
+        session.lastActive = new Date().toISOString();
+        
+        this.sessions.set(userId, session);
+        return session.conversations;
+    }
+}
+
+// Initialize session manager
+const sessionManager = new SessionManager();
 
 async function startAIBot() {
     try {
-        console.log(chalk.green.bold('🚀 Starting Malith\'s AI WhatsApp Bot...'));
+        console.log(chalk.green.bold('🚀 Malith\'s AI WhatsApp Bot - FINAL VERSION'));
         console.log(chalk.cyan('🤖 Powered by Gemini AI 2.0 Flash'));
+        console.log(chalk.yellow('💾 Local Storage - No Firebase Errors'));
         
         const { version } = await fetchLatestBaileysVersion();
         const { state, saveCreds } = await useMultiFileAuthState('./session');
         const msgRetryCounterCache = new NodeCache();
 
-        console.log(chalk.blue('🔐 Loading WhatsApp connection...'));
-
         const bot = makeWASocket({
             version,
             logger: pino({ level: 'silent' }),
-            // REMOVED printQRInTerminal - we handle QR manually
             auth: state,
             markOnlineOnConnect: true,
             generateHighQualityLinkPreview: true,
@@ -56,13 +101,11 @@ async function startAIBot() {
         // Save credentials when updated
         bot.ev.on('creds.update', saveCreds);
 
-        // Handle connection updates - MANUAL QR CODE HANDLING
+        // Handle connection updates
         bot.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
 
-            console.log(chalk.blue(`🔄 Connection status: ${connection}`));
-
-            // MANUAL QR CODE HANDLING - This is the fix!
+            // QR Code handling
             if (qr) {
                 console.log(chalk.yellow('\n📱 =========================================='));
                 console.log(chalk.yellow('📱           SCAN THIS QR CODE'));
@@ -74,7 +117,7 @@ async function startAIBot() {
             }
 
             if (connection === 'connecting') {
-                console.log(chalk.blue('🔄 Connecting to WhatsApp servers...'));
+                console.log(chalk.blue('🔄 Connecting to WhatsApp...'));
             }
 
             if (connection === 'open') {
@@ -86,7 +129,7 @@ async function startAIBot() {
                     const ownerJid = global.owner;
                     if (ownerJid) {
                         await bot.sendMessage(ownerJid, {
-                            text: `🤖 *Malith\'s AI Bot Activated!*\n\n✅ Connected: ${new Date().toLocaleString()}\n🚀 Powered by Gemini AI 2.0 Flash\n🌐 Ready to assist in Sinhala/English/Singlish!\n\nCreated by Malith Lakshan (94741907061) 🎉`
+                            text: `🤖 *Malith\'s AI Bot - FINAL VERSION!*\n\n✅ Connected: ${new Date().toLocaleString()}\n🚀 Powered by Gemini AI 2.0 Flash\n🌐 Languages: Sinhala/English/Singlish\n💾 Storage: Local (Fast & Reliable)\n\nCreated by Malith Lakshan (94741907061) 🎉`
                         });
                         console.log(chalk.green('📨 Startup message sent to owner'));
                     }
@@ -100,21 +143,6 @@ async function startAIBot() {
             if (connection === 'close') {
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-
-                console.log(chalk.yellow(`🔌 Connection closed. Status code: ${statusCode}`));
-                console.log(chalk.yellow(`🔄 Auto-reconnect: ${shouldReconnect}`));
-
-                if (statusCode === DisconnectReason.loggedOut) {
-                    console.log(chalk.red('❌ Session logged out. Clearing session...'));
-                    try {
-                        if (fs.existsSync('./session')) {
-                            fs.rmSync('./session', { recursive: true, force: true });
-                            console.log(chalk.yellow('🗑️ Session folder deleted. Please scan QR code again.'));
-                        }
-                    } catch (error) {
-                        console.error('Error clearing session:', error);
-                    }
-                }
 
                 if (shouldReconnect) {
                     console.log(chalk.blue('🔄 Reconnecting in 3 seconds...'));
@@ -159,7 +187,6 @@ async function startAIBot() {
                     if (!mentionedJid.includes(botJid) && !text.includes('@' + botJid.split('@')[0])) {
                         return;
                     }
-                    // Clean mention from text
                     text = text.replace(/@\d+/g, '').trim();
                 }
 
@@ -177,30 +204,15 @@ async function startAIBot() {
                     // Ignore presence errors
                 }
 
-                // Get or create user session
-                let userSession = userSessions.get(userJid);
-                if (!userSession) {
-                    userSession = await firebaseManager.getSession(userJid) || {
-                        userId: userJid,
-                        userName: userName,
-                        conversationCount: 0,
-                        createdAt: new Date().toISOString()
-                    };
-                    userSessions.set(userJid, userSession);
-                }
+                // Get user session
+                const userSession = await sessionManager.getSession(userJid);
 
                 // Generate AI response
                 console.log(chalk.yellow('🤖 Processing with Gemini AI...'));
                 const aiResponse = await aiBot.generateResponse(text, userName);
                 
-                // Update conversation in Firebase
-                await firebaseManager.updateConversation(userJid, text, aiResponse);
-                
-                // Update session
-                userSession.conversationCount++;
-                userSession.lastActive = new Date().toISOString();
-                userSession.userName = userName;
-                await firebaseManager.saveSession(userJid, userSession);
+                // Update conversation
+                await sessionManager.updateConversation(userJid, text, aiResponse);
 
                 // Stop typing
                 try {
@@ -214,12 +226,12 @@ async function startAIBot() {
                 console.log(chalk.green(`💬 AI Response: ${aiResponse}`));
 
             } catch (error) {
-                console.error(chalk.red('❌ Message processing error:'), error.message);
+                console.error(chalk.red('❌ Message error:'), error.message);
                 try {
                     const userJid = messages[0]?.key.remoteJid;
                     if (userJid) {
                         await bot.sendMessage(userJid, { 
-                            text: '😅 Sorry! I encountered an error. Please try again in a moment.' 
+                            text: '😅 Sorry! Temporary issue. Please try again.' 
                         });
                     }
                 } catch (sendError) {
@@ -239,26 +251,19 @@ async function startAIBot() {
                 console.log(chalk.yellow(`📞 Call received from: ${callerJid}`));
                 
                 await bot.sendMessage(callerJid, {
-                    text: '📵 *Auto Call Response*\n\nI\'m Malith\'s AI text assistant! 🤖\n\nI can only respond to text messages, not calls.\n\nPlease send me a message instead! 💬\n\n_Created by Malith Lakshan (94741907061)_'
+                    text: '📵 *Auto Call Response*\n\nI\'m Malith\'s AI text assistant! 🤖\n\nI can only respond to text messages.\n\nPlease send me a message instead! 💬\n\n_Created by Malith Lakshan (94741907061)_'
                 });
                 
             } catch (error) {
-                console.error('Call handling error:', error.message);
+                console.error('Call error:', error.message);
             }
         });
 
-        // Group events (for logging)
-        bot.ev.on('group-participants.update', async (update) => {
-            console.log(chalk.blue('👥 Group update:'), update.id);
-        });
-
-        console.log(chalk.green('✅ Bot initialization complete!'));
-        console.log(chalk.yellow('📱 Waiting for QR code to be generated...'));
-
+        console.log(chalk.green('✅ Bot ready! No Firebase errors!'));
         return bot;
 
     } catch (error) {
-        console.error(chalk.red('❌ Bot startup error:'), error.message);
+        console.error(chalk.red('❌ Startup error:'), error.message);
         console.log(chalk.blue('🔄 Restarting in 5 seconds...'));
         await delay(5000);
         startAIBot();
@@ -267,37 +272,37 @@ async function startAIBot() {
 
 function showBotInfo() {
     console.log(chalk.magenta('\n' + '═'.repeat(60)));
-    console.log(chalk.yellow.bold('           MALITH\'S AI WHATSAPP BOT'));
+    console.log(chalk.yellow.bold('           MALITH\'S AI BOT - FINAL VERSION'));
     console.log(chalk.magenta('═'.repeat(60)));
     console.log(chalk.cyan('👨‍💻 Creator:') + chalk.white(' Malith Lakshan'));
     console.log(chalk.cyan('📞 Contact:') + chalk.white(' 94741907061'));
     console.log(chalk.cyan('🤖 AI Model:') + chalk.white(' Gemini 2.0 Flash'));
     console.log(chalk.cyan('🌐 Languages:') + chalk.white(' Sinhala, English, Singlish'));
-    console.log(chalk.cyan('💾 Storage:') + chalk.white(' Firebase Database'));
-    console.log(chalk.cyan('😊 Features:') + chalk.white(' Emotional AI + Emojis'));
-    console.log(chalk.green.bold('✅ BOT IS READY TO RECEIVE MESSAGES!'));
+    console.log(chalk.cyan('💾 Storage:') + chalk.white(' Local (Fast & Reliable)'));
+    console.log(chalk.cyan('😊 Features:') + chalk.white(' Emotional AI + Smart Emojis'));
+    console.log(chalk.green.bold('✅ ZERO ERRORS - READY FOR USE!'));
     console.log(chalk.magenta('═'.repeat(60)));
-    console.log(chalk.yellow('\n💡 Now anyone can message this number and get AI responses!'));
-    console.log(chalk.yellow('🎯 The bot will auto-detect language and respond appropriately.\n'));
+    console.log(chalk.yellow('\n💡 Test these messages:'));
+    console.log(chalk.yellow('   English: "Hello, who made you?"'));
+    console.log(chalk.yellow('   Sinhala: "හෙලෝ, කොහොමද?"'));
+    console.log(chalk.yellow('   Singlish: "මචන්, what\'s up?"\n'));
 }
 
 // Error handling
 process.on('uncaughtException', (error) => {
-    console.error(chalk.red.bold('🛑 Uncaught Exception:'), error.message);
+    console.error(chalk.red.bold('🛑 Exception:'), error.message);
 });
 
 process.on('unhandledRejection', (error) => {
-    console.error(chalk.red.bold('🛑 Unhandled Rejection:'), error.message);
+    console.error(chalk.red.bold('🛑 Rejection:'), error.message);
 });
 
-// Clean shutdown
 process.on('SIGINT', () => {
-    console.log(chalk.yellow('\n🛑 Shutting down Malith\'s AI Bot...'));
-    console.log(chalk.green('👋 Thank you for using Malith\'s AI Assistant!'));
+    console.log(chalk.yellow('\n🛑 Shutting down...'));
+    console.log(chalk.green('👋 Thank you for using Malith\'s AI Bot!'));
     process.exit(0);
 });
 
 // Start the bot
-console.log(chalk.blue.bold('\n🎯 Malith\'s AI Bot Initializing...'));
-console.log(chalk.cyan('💡 Make sure you have stable internet connection'));
+console.log(chalk.blue.bold('\n🎯 Starting Final Version...'));
 startAIBot().catch(console.error);
