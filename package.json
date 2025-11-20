@@ -1,11 +1,11 @@
 {
-  "name": "malith-ai-standalone",
-  "version": "3.1.0",
-  "description": "Standalone AI WhatsApp Bot with Maximum Message Length",
-  "main": "index-standalone.js",
+  "name": "malith-direct-gemini",
+  "version": "1.0.0",
+  "description": "Direct Gemini WhatsApp Bot - No Limitations",
+  "main": "index-direct.js",
   "scripts": {
-    "start": "node index-standalone.js",
-    "dev": "nodemon index-standalone.js"
+    "start": "node index-direct.js",
+    "dev": "nodemon index-direct.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
@@ -14,13 +14,5 @@
     "qrcode-terminal": "^0.12.0",
     "pino": "^8.15.0",
     "node-cache": "^5.1.2"
-  },
-  "keywords": [
-    "whatsapp-bot",
-    "gemini-ai",
-    "ai-chatbot",
-    "malith-lakshan"
-  ],
-  "author": "Malith Lakshan (94741907061)",
-  "license": "MIT"
+  }
 }
