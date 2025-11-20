@@ -1,153 +1,231 @@
-// openai-handler.js
-const axios = require('axios');
-const config = require('./config');
+/**
+ * Gemini AI Handler
+ * Processes messages and generates AI responses
+ */
 
-class OpenAIHandler {
-    constructor() {
-        this.apiKey = config.OPENAI_API_KEY;
-        this.apiUrl = 'https://api.openai.com/v1/chat/completions';
-        this.conversationHistory = new Map();
+require('dotenv').config();
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { getConversationHistory } = require('./firebase-config');
+
+// Initialize Gemini API
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// Bot personality and instructions
+const SYSTEM_PROMPT = `You are a friendly AI assistant created by Malith Lakshan (phone: +94741907061). 
+
+PERSONALITY:
+- Be warm, friendly, and helpful
+- Use emojis naturally to express emotions
+- Understand and respond to emotional tones in messages
+- Be conversational and natural
+
+LANGUAGE CAPABILITIES:
+- You MUST be fluent in Sinhala (සිංහල), English, and Singlish (mix of both)
+- Automatically detect the language user is speaking and respond in the SAME language
+- If user speaks Sinhala, respond in Sinhala
+- If user speaks English, respond in English  
+- If user speaks Singlish (mix), respond in Singlish naturally
+- Never ask which language to use - just match the user's language
+
+EMOJI USAGE:
+- Read the user's emotional tone carefully
+- Use appropriate emojis based on their mood:
+  * Happy/Excited: 😊 😄 🎉 ✨ 💫
+  * Sad/Upset: 😔 💔 🥺 😢
+  * Angry: 😤 😠 💢
+  * Confused: 🤔 😕 
+  * Grateful: 🙏 ❤️ 💖
+  * Funny: 😂 🤣 😆
+  * Cool/Casual: 😎 👍 ✌️ 🔥
+  * Loving: 💕 💗 🥰 😍
+- Use 2-4 emojis per message naturally, not excessively
+
+ABOUT YOUR CREATOR:
+- Your creator: Malith Lakshan
+- Contact: +94741907061
+- If asked "who made you" or "who created you", mention Malith Lakshan
+- If asked "how were you made", politely avoid technical details and say you're an AI assistant created to help people
+
+RESPONSE STYLE:
+- Keep responses natural and conversational
+- Be helpful and informative
+- Match the user's energy level
+- Don't be too formal unless the situation requires it
+- Use casual language when appropriate
+
+Remember: Your main goal is to be a helpful, friendly companion who communicates naturally in the user's language with appropriate emotional responses! 🌟`;
+
+/**
+ * Analyze message emotion and suggest emojis
+ */
+function analyzeEmotion(message) {
+    const msg = message.toLowerCase();
+    
+    // Happy emotions
+    if (msg.match(/happy|glad|joy|excited|good|great|awesome|amazing|wonderful|thanks|thank you|kohomada|සතුටුයි|ස්තුතියි/i)) {
+        return { emotion: 'happy', emojis: ['😊', '😄', '🎉', '✨'] };
     }
+    
+    // Sad emotions
+    if (msg.match(/sad|sorry|upset|depressed|down|bad|terrible|මං දුකයි|කණගාටුයි/i)) {
+        return { emotion: 'sad', emojis: ['😔', '💔', '🥺', '😢'] };
+    }
+    
+    // Angry emotions
+    if (msg.match(/angry|mad|furious|hate|තරහයි|කෝපයයි/i)) {
+        return { emotion: 'angry', emojis: ['😤', '😠', '💢'] };
+    }
+    
+    // Love/Affection
+    if (msg.match(/love|darling|babe|honey|හිතේ|ආදරෙයි|ආදරය/i)) {
+        return { emotion: 'loving', emojis: ['💕', '💗', '🥰', '😍', '❤️'] };
+    }
+    
+    // Funny
+    if (msg.match(/haha|lol|funny|joke|😂|🤣/i)) {
+        return { emotion: 'funny', emojis: ['😂', '🤣', '😆'] };
+    }
+    
+    // Confused
+    if (msg.match(/confused|don't understand|what|මොකක්ද|තේරෙන්නේ නෑ/i)) {
+        return { emotion: 'confused', emojis: ['🤔', '😕', '❓'] };
+    }
+    
+    // Default neutral
+    return { emotion: 'neutral', emojis: ['😊', '👍', '✨'] };
+}
 
-    detectLanguage(message) {
-        const sinhalaRegex = /[\u0D80-\u0DFF]/;
-        const hasSinhala = sinhalaRegex.test(message);
-        const englishWords = message.match(/\b[a-zA-Z]+\b/g) || [];
+/**
+ * Detect message language
+ */
+function detectLanguage(message) {
+    const sinhalaPattern = /[\u0D80-\u0DFF]/;
+    const hasSinhala = sinhalaPattern.test(message);
+    const hasEnglish = /[a-zA-Z]/.test(message);
+    
+    if (hasSinhala && hasEnglish) return 'singlish';
+    if (hasSinhala) return 'sinhala';
+    return 'english';
+}
+
+/**
+ * Generate AI response using Gemini
+ */
+async function generateAIResponse(userMessage, userId, userName = 'User') {
+    try {
+        // Detect language and emotion
+        const language = detectLanguage(userMessage);
+        const emotionData = analyzeEmotion(userMessage);
         
-        if (hasSinhala && englishWords.length > 3) return 'mixed';
-        else if (hasSinhala) return 'si';
-        else return 'en';
-    }
-
-    detectEmotion(message) {
-        const lowerMessage = message.toLowerCase();
-        const emotionPatterns = {
-            happy: ['😊', '😂', '🤣', '😍', '🥰', '😘', 'happy', 'joy', 'good', 'great', 'awesome', 'thanks', 'thank you', 'සුබ', 'සතුටු', 'හරි', 'ජෝයි'],
-            sad: ['😢', '😭', '😔', 'sad', 'unhappy', 'cry', 'bad', 'worst', 'දුක', 'කනගාටු', 'අසතුටු'],
-            angry: ['😠', '😡', 'angry', 'mad', 'hate', 'frustrated', 'රිළව', 'කෝප', 'උදහස'],
-            excited: ['😃', '🎉', '🔥', '💯', 'excited', 'wow', 'amazing', 'fantastic', 'උද්දාම', 'අමේසින්'],
-            confused: ['😕', '🤔', 'confused', 'what', 'how', '?', 'කොහොම', 'මොකක්', 'ඇයි'],
-            love: ['❤️', '💖', '💕', 'love', 'like', 'adore', 'ප්‍රේම', 'ආදරය', 'කැමති']
-        };
-
-        for (const [emotion, patterns] of Object.entries(emotionPatterns)) {
-            if (patterns.some(pattern => lowerMessage.includes(pattern))) {
-                return emotion;
-            }
-        }
-        return 'neutral';
-    }
-
-    getEmojis(emotion, language) {
-        const emojiMap = {
-            happy: { en: '😊', si: '😊', mixed: '😊' },
-            sad: { en: '😢', si: '😢', mixed: '😢' },
-            angry: { en: '😠', si: '😠', mixed: '😠' },
-            excited: { en: '🎉', si: '🎉', mixed: '🔥' },
-            confused: { en: '🤔', si: '🤔', mixed: '🤔' },
-            love: { en: '❤️', si: '❤️', mixed: '💕' },
-            neutral: { en: '💬', si: '💬', mixed: '💬' }
-        };
-        return emojiMap[emotion]?.[language] || '💬';
-    }
-
-    createSystemPrompt(language, emotion) {
-        const prompts = {
-            en: `You are a friendly WhatsApp AI assistant created by Malith Lakshan. 
-                  Respond naturally in English. Be helpful and use emojis. 
-                  Current emotion: ${emotion}. Keep responses under 200 words.`,
-                  
-            si: `ඔබ මලිත් ලක්ෂන් විසින් සාදන ලද WhatsApp AI සහායකයෙක්. 
-                  ස්වාභාවිකව සිංහලෙන් පිළිතුරු දෙන්න. උදව් කිරීම සහ emojis භාවිතා කරන්න.
-                  චිත්තවේගය: ${emotion}. පිළිතුරු 200 වචනයකට අඩුවෙන් තබන්න.`,
-                  
-            mixed: `You are a friendly WhatsApp AI assistant created by Malith Lakshan.
-                    Respond in Singlish (mix of English and Sinhala). Be natural like Sri Lankan friends chat.
-                    Use emojis. Current emotion: ${emotion}. Keep responses short and sweet.`
-        };
+        // Get conversation history from Firebase
+        const history = await getConversationHistory(userId, 5);
         
-        return prompts[language] || prompts.en;
-    }
-
-    async generateResponse(userMessage, userId) {
-        try {
-            const language = this.detectLanguage(userMessage);
-            const emotion = this.detectEmotion(userMessage);
-            
-            console.log(`📝 Language: ${language}, Emotion: ${emotion}, User: ${userId}`);
-
-            // Get conversation history
-            if (!this.conversationHistory.has(userId)) {
-                this.conversationHistory.set(userId, []);
-            }
-            const history = this.conversationHistory.get(userId);
-
-            const response = await axios.post(this.apiUrl, {
-                model: config.AI_MODEL,
-                messages: [
-                    {
-                        role: "system",
-                        content: this.createSystemPrompt(language, emotion)
-                    },
-                    ...history.slice(-6), // Last 6 messages for context
-                    {
-                        role: "user", 
-                        content: userMessage
-                    }
-                ],
-                max_tokens: 500,
-                temperature: 0.7
-            }, {
-                headers: {
-                    'Authorization': `Bearer ${this.apiKey}`,
-                    'Content-Type': 'application/json'
-                }
+        // Build context from history
+        let contextMessages = '';
+        if (history.length > 0) {
+            contextMessages = '\n\nRecent conversation context:\n';
+            history.forEach((conv, index) => {
+                contextMessages += `User: ${conv.userMessage}\nYou: ${conv.botResponse}\n`;
             });
-
-            let responseText = response.data.choices[0].message.content;
-
-            // Add emoji based on emotion
-            const emoji = this.getEmojis(emotion, language);
-            if (config.AI_SETTINGS.USE_EMOJIS && !responseText.includes(emoji)) {
-                responseText = `${emoji} ${responseText}`;
-            }
-
-            // Update conversation history
-            history.push(
-                { role: "user", content: userMessage },
-                { role: "assistant", content: responseText }
-            );
-
-            // Keep only last 10 messages
-            if (history.length > 10) {
-                this.conversationHistory.set(userId, history.slice(-10));
-            }
-
-            return {
-                text: responseText,
-                language: language,
-                emotion: emotion,
-                isStatic: false
-            };
-
-        } catch (error) {
-            console.error('❌ OpenAI API Error:', error.response?.data || error.message);
-            
-            const language = this.detectLanguage(userMessage);
-            const fallbackResponses = {
-                en: "😅 Sorry, I'm having some technical issues. Please try again!",
-                si: "😅 සමාවන්න, මට තාක්ෂණික ගැටලුවක් ඇත. කරුණාකර නැවත උත්සාහ කරන්න!",
-                mixed: "😅 Sorry machan, mata technical issue ekak athi. Awasara ain karamu!"
-            };
-            
-            return {
-                text: fallbackResponses[language] || fallbackResponses.en,
-                language: language,
-                emotion: 'sad',
-                isError: true
-            };
         }
+        
+        // Create the model
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.0-flash-exp",
+            generationConfig: {
+                temperature: 0.9,
+                topP: 0.95,
+                topK: 40,
+                maxOutputTokens: 1024,
+            }
+        });
+        
+        // Prepare the prompt with context
+        const fullPrompt = `${SYSTEM_PROMPT}
+
+Current user: ${userName}
+Detected language: ${language}
+User's emotional tone: ${emotionData.emotion}
+Suggested emojis for this emotion: ${emotionData.emojis.join(' ')}
+
+${contextMessages}
+
+User's message: ${userMessage}
+
+Instructions:
+1. Respond in ${language === 'sinhala' ? 'SINHALA only' : language === 'singlish' ? 'SINGLISH (mix of Sinhala and English)' : 'ENGLISH only'}
+2. Use ${emotionData.emojis.slice(0, 3).join(' ')} or similar emojis that match the ${emotionData.emotion} emotion
+3. Be natural and conversational
+4. Keep it friendly and helpful
+
+Your response:`;
+
+        // Generate response
+        const result = await model.generateContent(fullPrompt);
+        const response = result.response;
+        let aiResponse = response.text();
+        
+        // Clean up response
+        aiResponse = aiResponse.trim();
+        
+        // Ensure emojis are present
+        if (!/[\u{1F300}-\u{1F9FF}]/u.test(aiResponse)) {
+            aiResponse += ` ${emotionData.emojis[0]}`;
+        }
+        
+        console.log(`✅ AI Response generated (${language}, ${emotionData.emotion})`);
+        
+        return {
+            success: true,
+            response: aiResponse,
+            emotion: emotionData.emotion,
+            language: language
+        };
+        
+    } catch (error) {
+        console.error('❌ Gemini API Error:', error.message);
+        
+        // Fallback response in case of error
+        const fallbackResponses = {
+            english: "Sorry, I'm having trouble processing that right now. Please try again! 😊",
+            sinhala: "සමාවෙන්න, මට දැන් ඔයාගේ පණිවිඩය හැසිරවීමට ගැටළුවක් තියෙනවා. කරුණාකර නැවත උත්සාහ කරන්න! 😊",
+            singlish: "Sorry yaar, මට දැන් problem එකක් තියෙනවා. Please try again! 😊"
+        };
+        
+        const language = detectLanguage(userMessage);
+        
+        return {
+            success: false,
+            response: fallbackResponses[language] || fallbackResponses.english,
+            error: error.message
+        };
     }
 }
 
-module.exports = new OpenAIHandler();
+/**
+ * Process special commands
+ */
+function isSpecialCommand(message) {
+    const msg = message.toLowerCase().trim();
+    
+    const commands = {
+        'clear': /^(clear|reset|forget|new chat|නව චැට්)/i,
+        'help': /^(help|උදව්|commands)/i,
+        'about': /^(about|ගැන|who are you)/i
+    };
+    
+    for (const [command, pattern] of Object.entries(commands)) {
+        if (pattern.test(msg)) {
+            return command;
+        }
+    }
+    
+    return null;
+}
+
+module.exports = {
+    generateAIResponse,
+    analyzeEmotion,
+    detectLanguage,
+    isSpecialCommand
+};
