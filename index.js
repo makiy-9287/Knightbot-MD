@@ -1,6 +1,6 @@
 /**
- * Malith's AI WhatsApp Bot - Fixed Version
- * No conversation display, long messages fixed, image support
+ * Malith's Friendly AI Assistant
+ * Direct Gemini with friendly responses & emojis
  * Created by Malith Lakshan
  */
 
@@ -25,11 +25,11 @@ const model = genAI.getGenerativeModel({
     model: "gemini-2.0-flash",
 });
 
-console.log(chalk.green('🚀 Malith AI Bot Starting...'));
+console.log(chalk.green('🚀 Malith AI Assistant Starting...'));
 
 async function startBot() {
     try {
-        console.log(chalk.green.bold('🤖 Starting AI Bot...'));
+        console.log(chalk.green.bold('🤖 Starting Friendly AI Assistant...'));
         
         const { version } = await fetchLatestBaileysVersion();
         const { state, saveCreds } = await useMultiFileAuthState('./session');
@@ -61,8 +61,8 @@ async function startBot() {
                 console.log(chalk.green.bold('✅ Connected to WhatsApp!'));
                 
                 try {
-                    await bot.sendMessage('94741907061@s.whatsapp.net', {
-                        text: '🤖 Malith AI is now active!'
+                    await bot.sendMessage('94789570921@s.whatsapp.net', {
+                        text: '👋 Hello! Your friendly AI assistant is now active! 🤖\n\nHow can I help you today? 😊'
                     });
                 } catch (error) {}
                 
@@ -79,7 +79,7 @@ async function startBot() {
             }
         });
 
-        // CLEAN MESSAGE HANDLER - NO CONVERSATION DISPLAY
+        // FRIENDLY MESSAGE HANDLER
         bot.ev.on('messages.upsert', async ({ messages, type }) => {
             if (type !== 'notify') return;
 
@@ -87,12 +87,11 @@ async function startBot() {
             if (!message.message || !message.key || message.key.fromMe) return;
 
             const userJid = message.key.remoteJid;
-            const userName = message.pushName || 'User';
+            const userName = message.pushName || 'Friend';
 
             // Get message content
             let text = '';
             let isImage = false;
-            let imageBuffer = null;
 
             const messageType = Object.keys(message.message)[0];
             
@@ -103,27 +102,12 @@ async function startBot() {
             } else if (messageType === 'imageMessage') {
                 isImage = true;
                 text = message.message.imageMessage.caption || '';
-                
-                // Download image
-                try {
-                    imageBuffer = await downloadMediaMessage(
-                        message, 
-                        'buffer', 
-                        {}, 
-                        { 
-                            logger: pino(), 
-                            reuploadRequest: bot.updateMediaMessage 
-                        }
-                    );
-                } catch (error) {
-                    console.log('Image download failed');
-                }
             }
 
             if (!text.trim() && !isImage) return;
 
-            // ONLY SHOW SENDER NAME - NO MESSAGE CONTENT
-            console.log(chalk.blue(`📩 Message from: ${userName}`));
+            // Show only sender name
+            console.log(chalk.blue(`💬 Message from: ${userName}`));
 
             // Mark as read
             try {
@@ -138,22 +122,20 @@ async function startBot() {
             try {
                 let aiResponse = '';
 
-                if (isImage && imageBuffer) {
-                    // Handle image analysis
-                    aiResponse = await handleImageAnalysis(imageBuffer, text);
+                if (isImage) {
+                    aiResponse = await handleFriendlyImageResponse(text);
                 } else {
-                    // Handle text message - DIRECT to Gemini
-                    aiResponse = await handleTextMessage(text);
+                    aiResponse = await handleFriendlyTextMessage(text, userName);
                 }
 
-                // Send response
+                // Send friendly response
                 await bot.sendMessage(userJid, { text: aiResponse });
-                console.log(chalk.green(`✅ Response sent to: ${userName}`));
+                console.log(chalk.green(`✅ Friendly response sent to: ${userName}`));
 
             } catch (error) {
                 console.error('Error:', error);
                 await bot.sendMessage(userJid, { 
-                    text: 'Sorry, there was an error processing your message.' 
+                    text: '😅 Oops! There was a small issue. Please try again! 🔄' 
                 });
             } finally {
                 try {
@@ -162,7 +144,7 @@ async function startBot() {
             }
         });
 
-        // Call handler
+        // Friendly call handler
         bot.ev.on('call', async (callData) => {
             if (!callData || !callData.length) return;
             
@@ -171,12 +153,12 @@ async function startBot() {
             
             try {
                 await bot.sendMessage(callerJid, {
-                    text: "📵 I'm a text AI. Please send a message instead."
+                    text: "📵 Hey there! I'm a text-based assistant. ✨\n\nSend me a message instead - I'd love to help! 💬"
                 });
             } catch (error) {}
         });
 
-        console.log(chalk.green('✅ Bot Ready!'));
+        console.log(chalk.green('✅ Friendly Assistant Ready!'));
         return bot;
 
     } catch (error) {
@@ -186,66 +168,67 @@ async function startBot() {
     }
 }
 
-// Direct text message handling - NO PROMPT ENGINEERING
-async function handleTextMessage(text) {
+// Friendly text message handling
+async function handleFriendlyTextMessage(text, userName) {
     try {
-        const result = await model.generateContent(text);
+        const friendlyPrompt = `You are a friendly, warm AI assistant in a private WhatsApp chat. Respond naturally and conversationally.
+
+User's message: "${text}"
+
+Important guidelines:
+- Use friendly, warm tone with appropriate emojis 😊✨🌟
+- Be conversational and natural
+- Use the user's name occasionally: ${userName}
+- Respond in the same language the user uses
+- Keep responses helpful but personal
+- Add relevant emojis to make it engaging
+- Don't be too formal - be like a friendly assistant
+- For questions, be thorough but friendly
+- For casual chat, be warm and engaging
+
+Make it feel like a real WhatsApp conversation between friends!`;
+
+        const result = await model.generateContent(friendlyPrompt);
         const response = await result.response;
         return response.text().trim();
+        
     } catch (error) {
         console.error('Gemini error:', error);
-        return 'Sorry, I encountered an error processing your message.';
+        return `😅 Sorry ${userName}, I'm having trouble right now. Can you try again? 🔄`;
     }
 }
 
-// Image analysis handling
-async function handleImageAnalysis(imageBuffer, caption) {
+// Friendly image response
+async function handleFriendlyImageResponse(caption) {
     try {
-        // For Gemini vision, we need to use a different approach
-        // Since we can't directly upload images to Gemini in this version
-        // We'll use a text-based response
         let prompt = "The user sent an image";
         if (caption) {
-            prompt += ` with caption: "${caption}". Describe what you see and respond to the caption.`;
+            prompt += ` with this message: "${caption}".`;
         } else {
-            prompt += ". Describe what you see in detail.";
+            prompt += ".";
         }
         
-        prompt += " Respond naturally in the same language the user would use.";
-        
+        prompt += ` Respond in a friendly, helpful way with some emojis. Describe what you would see and engage naturally.`;
+
         const result = await model.generateContent(prompt);
         const response = await result.response;
         return `🖼️ ${response.text().trim()}`;
-    } catch (error) {
-        console.error('Image analysis error:', error);
-        return '🖼️ I received your image but had trouble analyzing it. Could you describe it to me?';
-    }
-}
-
-// Image generation function
-async function generateImage(prompt) {
-    try {
-        // For now, we'll use text response since image generation requires additional setup
-        const imagePrompt = `The user asked to generate an image with description: "${prompt}". 
-        Since I can't generate images directly, describe what the image would look like in detail.`;
         
-        const result = await model.generateContent(imagePrompt);
-        const response = await result.response;
-        return `🎨 Image Description:\n${response.text().trim()}\n\n*Note: Actual image generation requires additional setup.*`;
     } catch (error) {
-        return '🎨 Sorry, I cannot generate images at the moment.';
+        return '📸 Thanks for the image! I received it but having trouble analyzing right now. 😅';
     }
 }
 
 function showBotInfo() {
-    console.log(chalk.magenta('\n' + '═'.repeat(40)));
-    console.log(chalk.yellow.bold('     MALITH AI BOT'));
-    console.log(chalk.magenta('═'.repeat(40)));
-    console.log(chalk.cyan('🤖 AI: Gemini 2.0 Flash Direct'));
-    console.log(chalk.cyan('🌍 Languages: Auto-detected'));
-    console.log(chalk.cyan('🖼️ Image: Analysis Supported'));
-    console.log(chalk.green('✅ Clean & Direct Responses'));
-    console.log(chalk.magenta('═'.repeat(40) + '\n'));
+    console.log(chalk.magenta('\n' + '═'.repeat(50)));
+    console.log(chalk.yellow.bold('     FRIENDLY AI ASSISTANT'));
+    console.log(chalk.magenta('═'.repeat(50)));
+    console.log(chalk.cyan('🤖 AI: Gemini 2.0 Flash'));
+    console.log(chalk.cyan('💬 Style: Friendly & Personal'));
+    console.log(chalk.cyan('😊 Tone: Warm with Emojis'));
+    console.log(chalk.cyan('👤 Personal: Uses names naturally'));
+    console.log(chalk.green('✅ Your private AI assistant!'));
+    console.log(chalk.magenta('═'.repeat(50) + '\n'));
 }
 
 // Start bot
