@@ -1,13 +1,12 @@
 /**
- * Malith's WhatsApp Bot - GPT & Imagine Only
- * Clean version without AntiDelete
+ * Malith's AntiDelete Bot
+ * Simple bot that detects deleted messages
  * Created by Malith Lakshan
  */
 
 const fs = require('fs');
 const chalk = require('chalk');
 const qrcode = require('qrcode-terminal');
-const axios = require('axios');
 const { 
     default: makeWASocket, 
     useMultiFileAuthState, 
@@ -18,95 +17,14 @@ const {
 const NodeCache = require("node-cache");
 const pino = require("pino");
 
-console.log(chalk.green('🚀 Malith Bot Starting...'));
+// Import AntiDelete functions
+const { storeMessage, handleMessageRevocation } = require('./antidelete');
 
-// AI Command Handler (GPT Only)
-async function handleAICommand(sock, chatId, message, text) {
-    try {
-        const parts = text.split(' ');
-        const query = parts.slice(1).join(' ').trim();
+console.log(chalk.green('🚀 AntiDelete Bot Starting...'));
 
-        if (!query) {
-            return await sock.sendMessage(chatId, { 
-                text: "Please provide a question after .gpt\n\nExample: .gpt write a basic html code"
-            }, { quoted: message });
-        }
-
-        // Show typing indicator
-        await sock.sendPresenceUpdate('composing', chatId);
-
-        const response = await axios.get(`https://zellapi.autos/ai/chatbot?text=${encodeURIComponent(query)}`);
-        
-        if (response.data && response.data.status && response.data.result) {
-            const answer = response.data.result;
-            await sock.sendMessage(chatId, { text: answer }, { quoted: message });
-        } else {
-            throw new Error('Invalid response from API');
-        }
-
-    } catch (error) {
-        console.error('AI Command Error:', error);
-        await sock.sendMessage(chatId, {
-            text: "❌ Failed to get response. Please try again later."
-        }, { quoted: message });
-    } finally {
-        await sock.sendPresenceUpdate('paused', chatId);
-    }
-}
-
-// Imagine Command Handler
-async function handleImagineCommand(sock, chatId, message, text) {
-    try {
-        const imagePrompt = text.slice(9).trim();
-        
-        if (!imagePrompt) {
-            await sock.sendMessage(chatId, {
-                text: 'Please provide a prompt for the image generation.\nExample: .imagine a beautiful sunset over mountains'
-            }, { quoted: message });
-            return;
-        }
-
-        await sock.sendPresenceUpdate('composing', chatId);
-        await sock.sendMessage(chatId, { text: '🎨 Generating your image... Please wait.' }, { quoted: message });
-
-        // Enhance the prompt with quality keywords
-        const enhancedPrompt = enhancePrompt(imagePrompt);
-
-        const response = await axios.get(`https://shizoapi.onrender.com/api/ai/imagine?apikey=shizo&query=${encodeURIComponent(enhancedPrompt)}`, {
-            responseType: 'arraybuffer'
-        });
-
-        const imageBuffer = Buffer.from(response.data);
-
-        await sock.sendMessage(chatId, {
-            image: imageBuffer,
-            caption: `🎨 Generated image for: "${imagePrompt}"`
-        }, { quoted: message });
-
-    } catch (error) {
-        console.error('Imagine Command Error:', error);
-        await sock.sendMessage(chatId, {
-            text: '❌ Failed to generate image. Please try again later.'
-        }, { quoted: message });
-    } finally {
-        await sock.sendPresenceUpdate('paused', chatId);
-    }
-}
-
-function enhancePrompt(prompt) {
-    const qualityEnhancers = [
-        'high quality', 'detailed', 'masterpiece', 'best quality', 
-        'ultra realistic', '4k', 'highly detailed'
-    ];
-    const numEnhancers = Math.floor(Math.random() * 2) + 3;
-    const selectedEnhancers = qualityEnhancers.sort(() => Math.random() - 0.5).slice(0, numEnhancers);
-    return `${prompt}, ${selectedEnhancers.join(', ')}`;
-}
-
-// Main Bot Function
 async function startBot() {
     try {
-        console.log(chalk.green.bold('🤖 Starting Bot...'));
+        console.log(chalk.green.bold('🤖 Starting AntiDelete Bot...'));
         
         const { version } = await fetchLatestBaileysVersion();
         const { state, saveCreds } = await useMultiFileAuthState('./session');
@@ -134,11 +52,11 @@ async function startBot() {
 
             if (connection === 'open') {
                 console.log(chalk.green.bold('✅ Connected to WhatsApp!'));
-                console.log(chalk.cyan('🟢 GPT & Imagine Ready'));
+                console.log(chalk.cyan('🔰 AntiDelete: ACTIVE'));
                 
                 try {
                     await sock.sendMessage('94741907061@s.whatsapp.net', {
-                        text: '🤖 *Malith Bot Active!*\n\n✅ GPT AI: .gpt\n🎨 Image Generation: .imagine\n⚡ All systems go!'
+                        text: '🚨 *AntiDelete Bot Active!*\n\nI will notify you when someone deletes messages!'
                     });
                 } catch (error) {}
                 
@@ -156,41 +74,21 @@ async function startBot() {
             }
         });
 
-        // Message Handler
+        // Store ALL messages for AntiDelete
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
             if (type !== 'notify') return;
 
             const message = messages[0];
             if (!message.message || !message.key) return;
 
-            const chatId = message.key.remoteJid;
-            const userName = message.pushName || 'User';
+            // Store message for AntiDelete
+            await storeMessage(sock, message);
+        });
 
-            // Get message text
-            const messageType = Object.keys(message.message)[0];
-            let text = '';
-            
-            if (messageType === 'conversation') {
-                text = message.message.conversation;
-            } else if (messageType === 'extendedTextMessage') {
-                text = message.message.extendedTextMessage.text;
-            }
-
-            // Check for commands
-            if (text && text.startsWith('.')) {
-                console.log(chalk.blue(`💬 Command from ${userName}: ${text}`));
-
-                // Mark as read
-                try { await sock.readMessages([message.key]); } catch (error) {}
-
-                const command = text.split(' ')[0].toLowerCase();
-
-                if (command === '.gpt') {
-                    await handleAICommand(sock, chatId, message, text);
-                } 
-                else if (command === '.imagine') {
-                    await handleImagineCommand(sock, chatId, message, text);
-                }
+        // Detect message deletions
+        sock.ev.on('messages.update', async (updates) => {
+            for (const update of updates) {
+                await handleMessageRevocation(sock, update);
             }
         });
 
@@ -199,7 +97,7 @@ async function startBot() {
             try { await sock.sendPresenceUpdate('available'); } catch (error) {}
         }, 60000);
 
-        console.log(chalk.green('✅ Bot Ready!'));
+        console.log(chalk.green('✅ AntiDelete Bot Ready!'));
         return sock;
 
     } catch (error) {
@@ -211,12 +109,12 @@ async function startBot() {
 
 function showBotInfo() {
     console.log(chalk.magenta('\n' + '═'.repeat(40)));
-    console.log(chalk.yellow.bold('     MALITH BOT'));
+    console.log(chalk.yellow.bold('     ANTIDELETE BOT'));
     console.log(chalk.magenta('═'.repeat(40)));
-    console.log(chalk.cyan('🤖 AI: GPT Only'));
-    console.log(chalk.cyan('🎨 Image: .imagine'));
-    console.log(chalk.cyan('⚡ Fast & Clean'));
-    console.log(chalk.green('✅ Ready to use!'));
+    console.log(chalk.cyan('🔰 Monitoring: ALL messages'));
+    console.log(chalk.cyan('👑 Owner: 94741907061'));
+    console.log(chalk.cyan('📱 Reports: Deleted messages'));
+    console.log(chalk.green('✅ Ready to detect deletions!'));
     console.log(chalk.magenta('═'.repeat(40) + '\n'));
 }
 
