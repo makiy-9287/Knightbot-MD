@@ -1,7 +1,7 @@
 {
-  "name": "malith-ai-bot",
-  "version": "3.0.0",
-  "description": "Fixed WhatsApp AI Bot with Image Support",
+  "name": "malith-super-bot",
+  "version": "5.0.0",
+  "description": "Super WhatsApp Bot with All Features",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
