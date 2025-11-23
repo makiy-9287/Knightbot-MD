@@ -1,137 +1,130 @@
-/**
- * Malith's AntiDelete Bot
- * Simple bot that detects deleted messages
- * Created by Malith Lakshan
- */
-
-const fs = require('fs');
-const chalk = require('chalk');
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
-const { 
-    default: makeWASocket, 
-    useMultiFileAuthState, 
-    DisconnectReason, 
-    fetchLatestBaileysVersion,
-    delay
-} = require("@whiskeysockets/baileys");
-const NodeCache = require("node-cache");
-const pino = require("pino");
+const pino = require('pino');
+const fs = require('fs');
+const path = require('path');
+const { storeMessage, handleMessageRevocation } = require('./lib/antidelete');
 
-// Import AntiDelete functions
-const { storeMessage, handleMessageRevocation } = require('./antidelete');
+// Configuration
+const SUDO_NUMBER = '94741907061@s.whatsapp.net';
+const AUTH_DIR = './auth_info';
+const messageStore = new Map();
 
-console.log(chalk.green('🚀 AntiDelete Bot Starting...'));
+// Ensure directories exist
+if (!fs.existsSync(AUTH_DIR)) {
+    fs.mkdirSync(AUTH_DIR, { recursive: true });
+}
+if (!fs.existsSync('./lib')) {
+    fs.mkdirSync('./lib', { recursive: true });
+}
+if (!fs.existsSync('./tmp')) {
+    fs.mkdirSync('./tmp', { recursive: true });
+}
 
-async function startBot() {
-    try {
-        console.log(chalk.green.bold('🤖 Starting AntiDelete Bot...'));
-        
-        const { version } = await fetchLatestBaileysVersion();
-        const { state, saveCreds } = await useMultiFileAuthState('./session');
-        const msgRetryCounterCache = new NodeCache();
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    const { version } = await fetchLatestBaileysVersion();
 
-        const sock = makeWASocket({
-            version,
-            logger: pino({ level: 'silent' }),
-            auth: state,
-            markOnlineOnConnect: true,
-            generateHighQualityLinkPreview: true,
-            syncFullHistory: true,
-            msgRetryCounterCache,
-        });
+    const sock = makeWASocket({
+        version,
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false,
+        auth: state,
+        browser: ['Antidelete Bot', 'Chrome', '1.0.0'],
+        markOnlineOnConnect: true,
+    });
 
-        sock.ev.on('creds.update', saveCreds);
+    // QR Code generation
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-        sock.ev.on('connection.update', async (update) => {
-            const { connection, lastDisconnect, qr } = update;
+        if (qr) {
+            console.log('\n📱 Scan this QR code to connect:\n');
+            qrcode.generate(qr, { small: true });
+        }
 
-            if (qr) {
-                console.log(chalk.yellow('\n📱 Scan QR Code:'));
-                qrcode.generate(qr, { small: true });
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('❌ Connection closed. Reconnecting:', shouldReconnect);
+            
+            if (shouldReconnect) {
+                setTimeout(() => connectToWhatsApp(), 3000);
             }
+        } else if (connection === 'open') {
+            console.log('✅ Connected to WhatsApp!');
+            console.log('🤖 Antidelete Bot is now active');
+            console.log('📞 Sudo Number:', SUDO_NUMBER.replace('@s.whatsapp.net', ''));
+        }
+    });
 
-            if (connection === 'open') {
-                console.log(chalk.green.bold('✅ Connected to WhatsApp!'));
-                console.log(chalk.cyan('🔰 AntiDelete: ACTIVE'));
-                
-                try {
-                    await sock.sendMessage('94741907061@s.whatsapp.net', {
-                        text: '🚨 *AntiDelete Bot Active!*\n\nI will notify you when someone deletes messages!'
-                    });
-                } catch (error) {}
-                
-                showBotInfo();
-            }
+    sock.ev.on('creds.update', saveCreds);
 
-            if (connection === 'close') {
-                console.log(chalk.red('🔌 Connection closed, reconnecting...'));
-                const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-                if (shouldReconnect) {
-                    console.log(chalk.blue('🔄 Reconnecting in 3 seconds...'));
-                    await delay(3000);
-                    startBot();
-                }
-            }
-        });
-
-        // Store ALL messages for AntiDelete
-        sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    // Message handler - Store all messages
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        try {
             if (type !== 'notify') return;
 
-            const message = messages[0];
-            if (!message.message || !message.key) return;
+            for (const message of messages) {
+                if (!message.key || !message.key.id) continue;
 
-            // Store message for AntiDelete
-            await storeMessage(sock, message);
-        });
+                // Store message for antidelete
+                await storeMessage(sock, message, SUDO_NUMBER);
 
-        // Detect message deletions
-        sock.ev.on('messages.update', async (updates) => {
-            for (const update of updates) {
-                await handleMessageRevocation(sock, update);
+                // Log received message
+                const from = message.key.remoteJid;
+                const sender = message.key.participant || from;
+                const isGroup = from.endsWith('@g.us');
+                
+                console.log(`📩 Message received from ${sender.split('@')[0]}${isGroup ? ' in group' : ''}`);
             }
-        });
+        } catch (err) {
+            console.error('Error in messages.upsert:', err);
+        }
+    });
 
-        // Keep alive
-        setInterval(async () => {
-            try { await sock.sendPresenceUpdate('available'); } catch (error) {}
-        }, 60000);
+    // Message deletion handler
+    sock.ev.on('messages.update', async (updates) => {
+        try {
+            for (const update of updates) {
+                if (update.update.messageStubType === 1 || update.key.fromMe === false) {
+                    // Check if message was deleted
+                    const messageId = update.key.id;
+                    const stored = messageStore.get(messageId);
+                    
+                    if (stored && update.update.message?.protocolMessage?.type === 0) {
+                        await handleMessageRevocation(sock, update, stored, SUDO_NUMBER);
+                        messageStore.delete(messageId);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('Error in messages.update:', err);
+        }
+    });
 
-        console.log(chalk.green('✅ AntiDelete Bot Ready!'));
-        return sock;
+    // Protocol message handler (for revoked messages)
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        try {
+            for (const msg of messages) {
+                if (msg.message?.protocolMessage?.type === 0) {
+                    // This is a delete/revoke message
+                    await handleMessageRevocation(sock, msg, messageStore, SUDO_NUMBER);
+                }
+            }
+        } catch (err) {
+            console.error('Error handling protocol message:', err);
+        }
+    });
 
-    } catch (error) {
-        console.error(chalk.red('Startup error:'), error);
-        await delay(5000);
-        startBot();
-    }
+    return sock;
 }
 
-function showBotInfo() {
-    console.log(chalk.magenta('\n' + '═'.repeat(40)));
-    console.log(chalk.yellow.bold('     ANTIDELETE BOT'));
-    console.log(chalk.magenta('═'.repeat(40)));
-    console.log(chalk.cyan('🔰 Monitoring: ALL messages'));
-    console.log(chalk.cyan('👑 Owner: 94741907061'));
-    console.log(chalk.cyan('📱 Reports: Deleted messages'));
-    console.log(chalk.green('✅ Ready to detect deletions!'));
-    console.log(chalk.magenta('═'.repeat(40) + '\n'));
-}
-
-// Handle process events
-process.on('SIGINT', () => {
-    console.log(chalk.yellow('\n🔄 Restarting bot...'));
-    startBot();
+// Start the bot
+console.log('🚀 Starting Antidelete Bot...\n');
+connectToWhatsApp().catch(err => {
+    console.error('Fatal error:', err);
+    process.exit(1);
 });
 
-process.on('uncaughtException', (error) => {
-    console.error(chalk.red('Uncaught exception:'), error);
-    console.log(chalk.blue('🔄 Restarting...'));
-    startBot();
-});
-
-// Start bot
-startBot().catch(error => {
-    console.error(chalk.red('Fatal error:'), error);
-    setTimeout(startBot, 10000);
-});
+// Export for use in other modules
+module.exports = { messageStore };
